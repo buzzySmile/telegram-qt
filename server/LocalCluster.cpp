@@ -83,6 +83,13 @@ bool LocalCluster::start()
     return !hasFails;
 }
 
+void LocalCluster::stop()
+{
+    for (Server *server : m_serverInstances) {
+        server->stop();
+    }
+}
+
 LocalUser *LocalCluster::addUser(const QString &identifier, quint32 dcId)
 {
     Server *server = getServerInstance(dcId);
