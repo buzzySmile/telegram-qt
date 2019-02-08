@@ -50,6 +50,7 @@ set_target_properties(
 
 install(
     TARGETS TelegramQt${QT_VERSION_MAJOR}Qml
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     LIBRARY DESTINATION ${TELEGRAM_QT_LIB_DIR}
     COMPONENT Library
 )
@@ -64,6 +65,7 @@ target_link_libraries(TelegramQmlPlugin
 
 install(
     TARGETS TelegramQmlPlugin
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     LIBRARY DESTINATION ${INSTALL_QML_IMPORT_DIR}/TelegramQt
 )
 
