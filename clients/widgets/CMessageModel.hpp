@@ -22,7 +22,16 @@
 
 #include "TelegramNamespace.hpp"
 
-class CTelegramCore;
+namespace Telegram {
+
+namespace Client {
+
+class Client;
+
+} // Client namespace
+
+} // Telegram namespace
+
 class CContactModel;
 class CFileManager;
 
@@ -69,7 +78,7 @@ public:
         QVariant mediaData;
     };
 
-    explicit CMessageModel(CTelegramCore *backend, QObject *parent = nullptr);
+    explicit CMessageModel(Telegram::Client::Client *backend, QObject *parent = nullptr);
     void setFileManager(CFileManager *manager);
     void setContactsModel(CContactModel *model);
 
@@ -96,9 +105,9 @@ public slots:
     void clear();
 
 private:
-    CTelegramCore *m_backend;
-    CFileManager *m_fileManager;
-    CContactModel *m_contactsModel;
+    Telegram::Client::Client *m_backend = nullptr;
+    CFileManager *m_fileManager = nullptr;
+    CContactModel *m_contactsModel = nullptr;
     QList<SMessage> m_messages;
     QHash<QString,quint64> m_fileRequests; // uniqueId to messageId
 

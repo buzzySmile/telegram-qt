@@ -19,10 +19,19 @@
 #include "CFileManager.hpp"
 #include "CContactModel.hpp"
 
-#include "CTelegramCore.hpp"
+#include "Client.hpp"
+#include "DataStorage.hpp"
+#include "DialogList.hpp"
+#include "PendingOperation.hpp"
+#include "MessagingApi.hpp"
+#include "Debug.hpp"
+
+#include "Operations/ClientMessagesOperation.hpp"
 
 #include <QDateTime>
 #include <QDebug>
+
+using namespace Telegram::Client;
 
 QString messageDeliveryStatusStr(CMessageModel::SMessage::Status status)
 {
@@ -56,19 +65,27 @@ CMessageModel::SMessage::SMessage(const Telegram::Message &m) :
     }
 }
 
-CMessageModel::CMessageModel(CTelegramCore *backend, QObject *parent) :
+CMessageModel::CMessageModel(Telegram::Client::Client *backend, QObject *parent) :
     QAbstractTableModel(parent),
     m_backend(backend),
     m_fileManager(nullptr),
     m_contactsModel(nullptr)
 {
-    connect(m_backend, SIGNAL(sentMessageIdReceived(quint64,quint32)),
-            SLOT(setResolvedMessageId(quint64,quint32)));
 
-    connect(m_backend, SIGNAL(messageReadInbox(Telegram::Peer,quint32)),
-            SLOT(setMessageInboxRead(Telegram::Peer,quint32)));
-    connect(m_backend, SIGNAL(messageReadOutbox(Telegram::Peer,quint32)),
-            SLOT(setMessageOutboxRead(Telegram::Peer,quint32)));
+//    connect(m_backend->messagingApi(), &MessagingApi::messageReceived,
+//            this, &CMessageModel::onMessageReceived);
+//    connect(m_backend->messagingApi(), &MessagingApi::messageEnqueued,
+//            this, &CMessageModel::onMessageQueued);
+//    connect(m_backend->messagingApi(), &MessagingApi::messageSent,
+//            this, &CMessageModel::onMessageSent);
+
+//    connect(m_backend, SIGNAL(sentMessageIdReceived(quint64,quint32)),
+//            SLOT(setResolvedMessageId(quint64,quint32)));
+
+//    connect(m_backend, SIGNAL(messageReadInbox(Telegram::Peer,quint32)),
+//            SLOT(setMessageInboxRead(Telegram::Peer,quint32)));
+//    connect(m_backend, SIGNAL(messageReadOutbox(Telegram::Peer,quint32)),
+//            SLOT(setMessageOutboxRead(Telegram::Peer,quint32)));
 }
 
 void CMessageModel::setFileManager(CFileManager *manager)
@@ -86,7 +103,7 @@ QString CMessageModel::peerToText(const Telegram::Peer &peer) const
 {
     if (peer.type == Telegram::Peer::User) {
         Telegram::UserInfo info;
-        m_backend->getUserInfo(&info, peer.id);
+        m_backend->dataStorage()->getUserInfo(&info, peer.id);
         if (!info.id()) {
             qDebug() << Q_FUNC_INFO << "Unknown contact..";
             return QStringLiteral("user%1").arg(peer.id);
@@ -94,7 +111,7 @@ QString CMessageModel::peerToText(const Telegram::Peer &peer) const
         return CContactModel::formatName(info);
     }
     Telegram::ChatInfo info;
-    m_backend->getChatInfo(&info, peer.id);
+    m_backend->dataStorage()->getChatInfo(&info, peer.id);
     if (!info.title().isEmpty()) {
         return info.title();
     }
@@ -263,7 +280,7 @@ void CMessageModel::addMessage(const SMessage &message)
     SMessage processedMessage = message;
     bool needFileData = false;
     if (message.type != TelegramNamespace::MessageTypeText) {
-        m_backend->getMessageMediaInfo(&mediaInfo, message.id, message.peer());
+        m_backend->dataStorage()->getMessageMediaInfo(&mediaInfo, message.peer(), message.id);
         mediaInfo.getRemoteFileInfo(&fileInfo);
         switch (message.type) {
         case TelegramNamespace::MessageTypePhoto:

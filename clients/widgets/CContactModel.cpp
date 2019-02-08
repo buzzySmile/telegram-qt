@@ -24,7 +24,7 @@
 
 #include <QDebug>
 
-CContactModel::CContactModel(CTelegramCore *backend, QObject *parent) :
+CContactModel::CContactModel(Telegram::Client::Client *backend, QObject *parent) :
     CPeerModel(parent)
 {
     setBackend(backend);
