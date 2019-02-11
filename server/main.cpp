@@ -93,8 +93,24 @@ int main(int argc, char *argv[])
     cluster.setAuthorizationProvider(&authProvider);
     qInfo() << "DBus auth code provider enabled";
 #endif
-
     cluster.start();
+
+    LocalUser *u1 = cluster.addUser(QStringLiteral("79002848028"), /* dc */ 1);
+    u1->setFirstName(QStringLiteral("Dc1User1"));
+    u1->setLastName(QStringLiteral("Dc1"));
+
+    LocalUser *u2 = cluster.addUser(QStringLiteral("79002848029"), /* dc */ 2);
+    u2->setFirstName(QStringLiteral("Dc1User2"));
+    u2->setLastName(QStringLiteral("Dc2"));
+
+    u2->importContact(u1->toContact());
+    u1->importContact(u2->toContact());
+
+    LocalUser *u3 = cluster.addUser(QStringLiteral("79222988314"), /* dc */ 1);
+    u3->setFirstName(QStringLiteral("Dc1User3"));
+    u3->setLastName(QStringLiteral("Dc1"));
+
+    u3->importContact(u2->toContact());
 
     return a.exec();
 }
