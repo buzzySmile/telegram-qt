@@ -44,16 +44,16 @@ static const QLatin1String c_id = QLatin1String("id");
 Config::Config(const QString &fileName)
 {
     if (fileName.isEmpty()) {
-        m_fileName = QStringLiteral("config.json");
+        m_fileName = QStringLiteral("config-16.json");
     } else {
         m_fileName = fileName;
     }
 
     // default config
     m_serverConfiguration.dcOptions = {
-        Telegram::DcOption(QStringLiteral("127.0.0.1"), 11441, 1),
-        Telegram::DcOption(QStringLiteral("127.0.0.2"), 11442, 2),
-        Telegram::DcOption(QStringLiteral("127.0.0.3"), 11443, 3),
+        Telegram::DcOption(QStringLiteral("192.168.2.8"), 11441, 1),
+        Telegram::DcOption(QStringLiteral("192.168.2.8"), 11442, 2),
+        Telegram::DcOption(QStringLiteral("192.168.2.8"), 11443, 3),
     };
     m_privateKeyFile = QStringLiteral("private_key.pem");
 }
