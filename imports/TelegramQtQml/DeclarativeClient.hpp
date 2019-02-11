@@ -12,6 +12,7 @@ namespace Telegram {
 namespace Client {
 
 class Client;
+class ContactsApi;
 class DeclarativeSettings;
 class AccountStorage;
 class DataStorage;
@@ -37,6 +38,7 @@ public:
     AccountStorage *accountStorage() const;
     DataStorage *dataStorage() const;
     MessagingApi *messagingApi() const;
+    ContactsApi *contactsApi() const;
 
 public slots:
     void setAppInformation(CAppInformation *newAppInfo);

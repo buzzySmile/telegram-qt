@@ -37,22 +37,23 @@ static const QLatin1String c_serverConfiguration = QLatin1String("serverConfigur
 static const QLatin1String c_dcOptions = QLatin1String("dcOptions");
 static const QLatin1String c_address = QLatin1String("address");
 static const QLatin1String c_port = QLatin1String("port");
+static const QLatin1String c_id = QLatin1String("id");
 
 } // ConfigKey namespace
 
 Config::Config(const QString &fileName)
 {
     if (fileName.isEmpty()) {
-        m_fileName = QStringLiteral("config.json");
+        m_fileName = QStringLiteral("config-16.json");
     } else {
         m_fileName = fileName;
     }
 
     // default config
     m_serverConfiguration.dcOptions = {
-        Telegram::DcOption(QStringLiteral("127.0.0.1"), 11441, 1),
-        Telegram::DcOption(QStringLiteral("127.0.0.2"), 11442, 2),
-        Telegram::DcOption(QStringLiteral("127.0.0.3"), 11443, 3),
+        Telegram::DcOption(QStringLiteral("192.168.2.8"), 11441, 1),
+        Telegram::DcOption(QStringLiteral("192.168.2.8"), 11442, 2),
+        Telegram::DcOption(QStringLiteral("192.168.2.8"), 11443, 3),
     };
     m_privateKeyFile = QStringLiteral("private_key.pem");
 }
@@ -111,6 +112,7 @@ bool Config::load()
         DcOption dcOpt;
         dcOpt.address = jobj[ConfigKey::c_address].toString();
         dcOpt.port = static_cast<quint16>(jobj[ConfigKey::c_port].toInt());
+        dcOpt.id = static_cast<quint32>(jobj[ConfigKey::c_id].toInt());
         m_serverConfiguration.dcOptions.append(dcOpt);
     }
 
@@ -129,6 +131,7 @@ bool Config::save() const
         QJsonObject jdcOpt;
         jdcOpt[ConfigKey::c_address] = opt.address;
         jdcOpt[ConfigKey::c_port] = opt.port;
+        jdcOpt[ConfigKey::c_id] = static_cast<int>(opt.id);
         jdcArr.append(QJsonValue(jdcOpt));
     }
     jserverConfiguration[ConfigKey::c_dcOptions] = jdcArr;

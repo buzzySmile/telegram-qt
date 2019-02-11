@@ -39,6 +39,11 @@ MessagingApi *DeclarativeClient::messagingApi() const
     return m_client->messagingApi();
 }
 
+ContactsApi *DeclarativeClient::contactsApi() const
+{
+    return m_client->contactsApi();
+}
+
 void DeclarativeClient::setAppInformation(CAppInformation *newAppInfo)
 {
     m_client->setAppInformation(newAppInfo);

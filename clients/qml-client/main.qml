@@ -25,7 +25,7 @@ ApplicationWindow {
 
     QtObject {
         id: options
-        property bool localServer: true && false
+        property bool localServer: true //&& false
     }
 
     Telegram.FileAccountStorage {
@@ -78,7 +78,7 @@ ApplicationWindow {
         id: localSettings
         serverOptions: [
             Telegram.ServerOption {
-                address: "127.0.0.1"
+                address: "192.168.2.8"
                 port: 11441
             }
         ]

@@ -1510,6 +1510,29 @@ void MessagesRpcOperation::runSendMedia()
 
 void MessagesRpcOperation::runSendMessage()
 {
+    // to contact
+    //    for self (if self != recipient)
+    //        Add message { self messageId }
+    //        Update NewMessage (Message (Out), self PTS) }
+    //    for recipient
+    //        Add message { recipient messageId }
+    //        Update NewMessage (Message (), recipient PTS) }
+    //
+    // to group chat
+    //     for self
+    //        Add message { self messageId }
+    //        Update NewMessage (Message (Out), self PTS) }
+    //     for each member
+    //        Add message { member messageId }
+    //        Update NewMessage (Message (), member PTS) }
+    //
+    // to megagroup
+    //     Add message { channel messageId }
+    //     for self
+    //        Update UpdateNewChannelMessage (Message (Out), channel PTS) }
+    //     for each member
+    //        Update UpdateNewChannelMessage (Message (), channel PTS) }
+
     TLFunctions::TLMessagesSendMessage &arguments = m_sendMessage;
 
     LocalUser *self = layer()->getUser();
