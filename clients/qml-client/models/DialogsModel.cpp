@@ -6,6 +6,9 @@
 #include "../../TelegramQt/DialogList.hpp"
 #include "../../TelegramQt/PendingOperation.hpp"
 
+#include "ContactsApi.hpp"
+#include "ContactList.hpp"
+
 #include <QDateTime>
 
 #include <QDebug>
@@ -105,6 +108,9 @@ QVariant DialogsModel::getData(int index, DialogsModel::Role role) const
 
 QVariantMap DialogsModel::getDialogLastMessageData(const DialogEntry &dialog) const
 {
+    if (dialog.lastChatMessage.id == 0) {
+        return {};
+    }
     QString text;
     if (dialog.lastChatMessage.type == TelegramNamespace::MessageTypeText) {
         text = dialog.lastChatMessage.text;
@@ -144,10 +150,16 @@ void DialogsModel::setClient(DeclarativeClient *target)
 void DialogsModel::populate()
 {
     m_list = m_client->messagingApi()->getDialogList();
+//    m_list2 = m_client->contactsApi()->getContactList();
     connect(m_list->becomeReady(), &Telegram::PendingOperation::finished, this, &DialogsModel::onListReady);
     if (m_list->isReady()) {
         onListReady();
     }
+//    m_list->becomeReady();
+//    connect(m_list2->becomeReady(), &Telegram::PendingOperation::finished, this, &DialogsModel::onListReady);
+//    if (m_list2->isReady()) {
+//        onListReady();
+//    }
 }
 
 QString getPeerAlias(const Telegram::Peer &peer, const Telegram::Client::Client *client)
@@ -155,6 +167,9 @@ QString getPeerAlias(const Telegram::Peer &peer, const Telegram::Client::Client 
     if (peer.type == Telegram::Peer::Type::User) {
         Telegram::UserInfo info;
         if (client->dataStorage()->getUserInfo(&info, peer.id)) {
+            if (!info.phone().isEmpty()) {
+                return info.phone();
+            }
             QString name;
             if (!info.firstName().isEmpty()) {
                 name = info.firstName();
@@ -188,9 +203,10 @@ void DialogsModel::onListReady()
 {
     qWarning() << Q_FUNC_INFO;
     connect(m_list, &DialogList::listChanged, this, &DialogsModel::onListChanged);
+//    connect(m_list2, &ContactList::listChanged, this, &DialogsModel::onListChanged);
     beginResetModel();
     m_dialogs.clear();
-    const QVector<Telegram::Peer> peers = m_list->peers();
+    const QVector<Telegram::Peer> peers = {Peer::fromUserId(m_client->dataStorage()->selfUserId())};
     for (const Telegram::Peer &peer : peers) {
         addPeer(peer);
     }

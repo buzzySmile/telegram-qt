@@ -9,6 +9,7 @@ namespace Telegram {
 
 namespace Client {
 
+class ContactList;
 class DeclarativeClient;
 class DialogList;
 
@@ -97,6 +98,7 @@ private:
     QVector<DialogEntry> m_dialogs;
     DeclarativeClient *m_client = nullptr;
     DialogList *m_list = nullptr;
+    ContactList *m_list2 = nullptr;
 
 };
 
