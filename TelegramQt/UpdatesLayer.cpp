@@ -12,7 +12,7 @@
 
 #include <QLoggingCategory>
 
-Q_LOGGING_CATEGORY(c_updatesLoggingCategory, "telegram.client.updates", QtWarningMsg)
+Q_LOGGING_CATEGORY(c_updatesLoggingCategory, "telegram.client.updates", QtDebugMsg)
 
 namespace Telegram {
 
@@ -134,9 +134,8 @@ bool UpdatesInternalApi::processUpdates(const TLUpdates &updates)
 bool UpdatesInternalApi::processUpdate(const TLUpdate &update)
 {
 #ifdef DEVELOPER_BUILD
-    qCDebug(c_updatesLoggingCategory) << Q_FUNC_INFO << update;
+    // qCDebug(c_updatesLoggingCategory) << Q_FUNC_INFO << update;
 #endif
-
     switch (update.tlType) {
     case TLValue::UpdateNewMessage:
     case TLValue::UpdateNewChannelMessage:

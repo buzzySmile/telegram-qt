@@ -15,6 +15,16 @@ namespace Telegram {
 
 namespace Server {
 
+quint32 MessageRecipient::addMessage(const TLMessage &message)
+{
+    ++m_lastMessageId;
+
+    m_messages.insert(m_lastMessageId, message);
+    TLMessage *addedMessage = &m_messages[m_lastMessageId];
+    addedMessage->id = m_lastMessageId;
+    return m_lastMessageId;
+}
+
 TLPeer MessageRecipient::toTLPeer() const
 {
     const Peer p = toPeer();
@@ -38,6 +48,20 @@ TLPeer MessageRecipient::toTLPeer() const
         break;
     }
     return result;
+}
+
+const TLMessage *MessageRecipient::getMessage(quint32 messageId) const
+{
+    MessageRecipient *mutableUser = const_cast<MessageRecipient *>(this);
+    return mutableUser->getMutableMessage(messageId);
+}
+
+TLMessage *MessageRecipient::getMutableMessage(quint32 messageId)
+{
+    if (m_messages.contains(messageId)) {
+        return &m_messages[messageId];
+    }
+    return nullptr;
 }
 
 UserContact AbstractUser::toContact() const
@@ -139,58 +163,12 @@ void LocalUser::setPassword(const QByteArray &salt, const QByteArray &hash)
     m_passwordHash = hash;
 }
 
-quint32 LocalUser::addMessage(const TLMessage &message, Session *excludeSession)
+quint32 LocalUser::addMessage(const TLMessage &message)
 {
-    m_messages.append(message);
-    TLMessage *addedMessage = &m_messages.last();
-    addedMessage->id = addPts();
+    quint32 result = MessageRecipient::addMessage(message);
     const Telegram::Peer messagePeer = Telegram::Utils::getMessagePeer(message, id());
-    UserDialog *dialog = ensureDialog(messagePeer);
-    dialog->topMessage = addedMessage->id;
-
-    // Post update to other sessions
-    bool needUpdates = false;
-    for (Session *s : activeSessions()) {
-        if (s == excludeSession) {
-            continue;
-        }
-        needUpdates = true;
-        break;
-    }
-    if (!needUpdates) {
-        return addedMessage->id;
-    }
-
-    ServerApi *api = activeSessions().first()->rpcLayer()->api();
-    AbstractUser *sender = api->getAbstractUser(message.fromId);
-
-    TLUpdate newMessageUpdate;
-    newMessageUpdate.tlType = TLValue::UpdateNewMessage;
-    newMessageUpdate.message = *addedMessage;
-    newMessageUpdate.pts = pts();
-    newMessageUpdate.ptsCount = 1;
-
-    TLUpdates updates;
-    updates.tlType = TLValue::Updates;
-    updates.updates = { newMessageUpdate };
-    updates.chats = {};
-
-    if (sender) {
-        updates.users = { TLUser() }; // Sender
-        Utils::setupTLUser(&updates.users[0], sender, this);
-    }
-
-    updates.date = message.date;
-    //updates.seq = 0;
-
-    for (Session *s : activeSessions()) {
-        if (s == excludeSession) {
-            continue;
-        }
-        s->rpcLayer()->sendUpdates(updates);
-    }
-
-    return addedMessage->id;
+    syncDialog(messagePeer, m_lastMessageId);
+    return result;
 }
 
 TLVector<TLMessage> LocalUser::getHistory(const Peer &peer,
@@ -211,38 +189,27 @@ TLVector<TLMessage> LocalUser::getHistory(const Peer &peer,
     QVector<int> wantedIndices;
     wantedIndices.reserve(actualLimit);
 
-    for (int i = m_messages.count() - 1; i >= 0; --i) {
-        const TLMessage &message = m_messages.at(i);
-        if (peer.isValid()) {
-            Telegram::Peer messagePeer = Telegram::Utils::getMessagePeer(message, id());
-            if (peer != messagePeer) {
-                continue;
-            }
-        }
+//    for (int i = m_messages.count() - 1; i >= 0; --i) {
+//        const TLMessage &message = m_messages.at(i);
+//        if (peer.isValid()) {
+//            Telegram::Peer messagePeer = Telegram::Utils::getMessagePeer(message, id());
+//            if (peer != messagePeer) {
+//                continue;
+//            }
+//        }
 
-        wantedIndices.append(i);
-        if (wantedIndices.count() == actualLimit) {
-            break;
-        }
-    }
+//        wantedIndices.append(i);
+//        if (wantedIndices.count() == actualLimit) {
+//            break;
+//        }
+//    }
 
     TLVector<TLMessage> result;
-    result.reserve(wantedIndices.count());
-    for (int i : wantedIndices) {
-        result.append(m_messages.at(i));
-    }
+//    result.reserve(wantedIndices.count());
+//    for (int i : wantedIndices) {
+//        result.append(m_messages.at(i));
+//    }
     return result;
-}
-
-const TLMessage *LocalUser::getMessage(quint32 messageId) const
-{
-    if (!messageId || m_messages.isEmpty()) {
-        return nullptr;
-    }
-    if (static_cast<quint32>(m_messages.count()) < messageId) {
-        return nullptr;
-    }
-    return &m_messages.at(messageId - 1);
 }
 
 quint32 LocalUser::addPts()
@@ -270,6 +237,17 @@ UserDialog *LocalUser::ensureDialog(const Telegram::Peer &peer)
     m_dialogs.append(new UserDialog());
     m_dialogs.last()->peer = peer;
     return m_dialogs.last();
+}
+
+void LocalUser::syncDialog(const Peer &peer, quint32 messageId)
+{
+    UserDialog *dialog = ensureDialog(peer);
+    dialog->topMessage = messageId;
+}
+
+TLValue LocalUser::newMessageUpdateType() const
+{
+    return TLValue::UpdateNewMessage;
 }
 
 } // Server namespace

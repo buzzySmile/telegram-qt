@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <QVector>
+#include <QHash>
 
 #include "ServerNamespace.hpp"
 #include "TLTypes.hpp"
@@ -18,10 +19,23 @@ class MessageRecipient
 {
 public:
     virtual ~MessageRecipient() = default;
-    virtual quint32 addMessage(const TLMessage &message, Session *excludeSession = nullptr) = 0;
+
+    virtual TLValue newMessageUpdateType() const = 0;
+
+    virtual quint32 addMessage(const TLMessage &message);
 
     virtual Peer toPeer() const = 0;
     TLPeer toTLPeer() const;
+
+    quint32 pts() const { return m_pts; }
+    const TLMessage *getMessage(quint32 messageId) const;
+
+protected:
+    TLMessage *getMutableMessage(quint32 messageId);
+
+    quint32 m_pts = 0;
+    quint32 m_lastMessageId = 0;
+    QHash<quint32,TLMessage> m_messages;
 };
 
 class AbstractUser : public MessageRecipient
@@ -77,12 +91,11 @@ public:
 
     QString passwordHint() const { return QString(); }
 
-    quint32 addMessage(const TLMessage &message, Session *excludeSession = nullptr) override;
-    const TLMessage *getMessage(quint32 messageId) const;
+    quint32 addMessage(const TLMessage &message) override;
 
     TLVector<TLMessage> getHistory(const Telegram::Peer &peer, quint32 offsetId, quint32 offsetDate, quint32 addOffset, quint32 limit, quint32 maxId, quint32 minId, quint32 hash) const;
 
-    quint32 pts() const { return m_pts; }
+    TLValue newMessageUpdateType() const override;
     quint32 addPts();
 
     void importContact(const UserContact &contact);
@@ -97,6 +110,7 @@ signals:
 
 protected:
     UserDialog *ensureDialog(const Telegram::Peer &peer);
+    void syncDialog(const Telegram::Peer &peer, quint32 messageId);
 
     quint32 m_id = 0;
     QString m_phoneNumber;
@@ -108,8 +122,6 @@ protected:
     QVector<Session*> m_sessions;
     quint32 m_dcId = 0;
 
-    quint32 m_pts = 0;
-    QVector<TLMessage> m_messages;
     QVector<UserDialog *> m_dialogs;
     QVector<quint32> m_contactList; // Contains only registered users from the added contacts
     QVector<UserContact> m_importedContacts; // Contains phone + name of all added contacts (including not registered yet)

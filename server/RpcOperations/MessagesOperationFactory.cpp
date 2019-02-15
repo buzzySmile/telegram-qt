@@ -1514,12 +1514,16 @@ void MessagesRpcOperation::runSendMessage()
 
     LocalUser *self = layer()->getUser();
 
-    Telegram::Peer peer = Telegram::Utils::toPublicPeer(arguments.peer, self->id());
-    MessageRecipient *recipient = nullptr;
+    Telegram::Peer targetPeer = Telegram::Utils::toPublicPeer(arguments.peer, self->id());
+    MessageRecipient *senderOutbox = nullptr;
+    MessageRecipient *receiverInbox = nullptr;
 
-    switch (peer.type) {
+    switch (targetPeer.type) {
     case Telegram::Peer::User:
-        recipient = api()->tryAccessUser(peer.id, arguments.peer.accessHash, self);
+        receiverInbox = api()->tryAccessUser(targetPeer.id, arguments.peer.accessHash, self);
+//        if (targetPeer == self->toPeer()) {
+//            targetOutbox;
+//        }
         break;
     case Telegram::Peer::Chat:
         break;
@@ -1527,44 +1531,86 @@ void MessagesRpcOperation::runSendMessage()
         //recipient = api()->getChannel(arguments.peer.channelId, arguments.peer.accessHash);
         break;
     }
-    if (!recipient) {
+    if (!receiverInbox) {
         sendRpcError(RpcError());
         return;
     }
 
+    TLUpdates result;
+    result.tlType = TLValue::Updates;
+    result.date = Telegram::Utils::getCurrentTime();
+
+    // Add to receiver inbox
+    // Add to sender outbox
+
     TLUpdate newMessageUpdate;
-    newMessageUpdate.tlType = TLValue::UpdateNewMessage;
-    newMessageUpdate.pts = self->pts();
+    newMessageUpdate.tlType = receiverInbox->newMessageUpdateType();
+    //newMessageUpdate.message = *addedMessage;
+    //newMessageUpdate.pts = receiverInbox->pts();
     newMessageUpdate.ptsCount = 1;
 
-    TLMessage &message = newMessageUpdate.message;
-    message.tlType = TLValue::Message;
-    message.fromId = self->id();
-    message.flags |= TLMessage::FromId;
-    message.message = arguments.message;
-    message.date = Telegram::Utils::getCurrentTime();
-    message.toId = recipient->toTLPeer();
-    const quint32 newMessageId = self->addMessage(message, layer()->session());
-    message.id = newMessageId;
+//    for (Session *s : activeSessions()) {
+//        if (s == excludeSession) {
+//            continue;
+//        }
+//        s->rpcLayer()->sendUpdates(updates);
+//    }
+
+//    TLMessage &message = newMessageUpdate.message;
+//    message.tlType = TLValue::Message;
+//    message.fromId = self->id();
+//    message.flags |= TLMessage::FromId;
+//    message.message = arguments.message;
+//    message.date = Telegram::Utils::getCurrentTime();
+//    message.toId = targetInbox->toTLPeer();
+//    const quint32 newMessageId = self->addMessage(message);
+
+//    message.id = newMessageId;
 
     TLUpdate updateMessageId;
     updateMessageId.tlType = TLValue::UpdateMessageID;
-    updateMessageId.quint32Id = newMessageId;
+//    updateMessageId.quint32Id = newMessageId;
     updateMessageId.randomId = arguments.randomId;
 
-    TLUpdates result;
-    result.tlType = TLValue::Updates;
-    result.updates = { updateMessageId, newMessageUpdate };
-    result.users = { TLUser() }; // Sender
-    Utils::setupTLUser(&result.users[0], self, self);
 
-    result.chats = {};
-    result.date = message.date;
-    result.seq = 0; // ?
+//    QSet<Peer> interestingPeers;
+//    interestingPeers.insert(targetPeer);
+//    Utils::setupTLPeers(&result, interestingPeers, api(), self);
+
+//    result.date = message.date;
+
+//    if (targetInbox != self) {
+//        recipient->addMessage(message, layer()->session());
+//    }
+
+
+
+//    // Post update to other sessions
+//    bool needUpdates = false;
+//    for (Session *s : activeSessions()) {
+//        if (s == excludeSession) {
+//            continue;
+//        }
+//        needUpdates = true;
+//        break;
+//    }
+
+//    if (needUpdates) {
+    // Bake updates
+
+    result.seq = 0; // Sender seq number seems to always equal zero
+    result.updates = {
+        updateMessageId,
+        newMessageUpdate,
+        // maybe UpdateReadChannelInbox or UpdateReadHistoryInbox
+    };
     sendRpcReply(result);
 
-    if (recipient != self) {
-        recipient->addMessage(message, layer()->session());
+    if (true) {
+
+
+
+        // receiverInbox->queueUpdates();
     }
 }
 

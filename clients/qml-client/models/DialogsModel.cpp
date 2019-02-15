@@ -218,17 +218,17 @@ void DialogsModel::addPeer(const Peer &peer)
     d.peer = peer;
 
     Telegram::DialogInfo apiInfo;
-    m_client->client()->dataStorage()->getDialogInfo(&apiInfo, peer);
+    if (m_client->client()->dataStorage()->getDialogInfo(&apiInfo, peer)) {
+        d.unreadCount = apiInfo.unreadCount();
 
-    d.unreadCount = apiInfo.unreadCount();
-
-    quint32 messageId = apiInfo.lastMessageId();
-    Message message;
-    m_client->client()->dataStorage()->getMessage(&message, peer, messageId);
-    //message.text = "long long long long text long long long long text";
-    //message.flags = TelegramNamespace::MessageFlagOut;
-    d.lastChatMessage = message;
-    qWarning().noquote() << "message text:" << message.text;
+        quint32 messageId = apiInfo.lastMessageId();
+        Message message;
+        m_client->client()->dataStorage()->getMessage(&message, peer, messageId);
+        //message.text = "long long long long text long long long long text";
+        //message.flags = TelegramNamespace::MessageFlagOut;
+        d.lastChatMessage = message;
+        qWarning().noquote() << "message text:" << message.text;
+    }
 
     m_dialogs << d;
 }
