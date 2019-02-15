@@ -27,6 +27,9 @@
 
 #include "keys_data.hpp"
 
+#include "Debug_p.hpp"
+#include "TLTypesDebug.hpp"
+
 using namespace Telegram;
 
 class tst_utils : public QObject
@@ -38,6 +41,7 @@ public:
 private slots:
     void initTestCase();
     void cleanupTestCase();
+public slots:
     void testAesEncryption();
     void testRsaLoadPublicKey();
     void testRsaLoadPrivateKey();
@@ -55,6 +59,14 @@ private slots:
 tst_utils::tst_utils(QObject *parent) :
     QObject(parent)
 {
+    quint64 h = 11034187394399972706ull;
+
+    TLUser u;
+    u.tlType = TLValue::User;
+    u.flags = TLUser::Phone|TLUser::AccessHash;
+    u.accessHash = h;
+    u.phone = "+1234667";
+    qDebug() << u;
 }
 
 void tst_utils::initTestCase()
