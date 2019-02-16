@@ -30,6 +30,10 @@
 #include "UsersOperationFactory.hpp"
 // End of generated RPC Operation Factory includes
 
+#include "ServerRpcLayer.hpp"
+#include "ServerUtils.hpp"
+#include "Debug.hpp"
+
 Q_LOGGING_CATEGORY(loggingCategoryServer, "telegram.server.main", QtInfoMsg)
 Q_LOGGING_CATEGORY(loggingCategoryServerApi, "telegram.server.api", QtWarningMsg)
 
@@ -199,6 +203,22 @@ Peer Server::getPeer(const TLInputPeer &peer, const LocalUser *applicant) const
     };
 }
 
+MessageRecipient *Server::getRecipient(const Peer &peer, const LocalUser *applicant) const
+{
+    Q_UNUSED(applicant)
+    switch (peer.type) {
+    case Telegram::Peer::User:
+        return getUser(peer.id);
+    case Telegram::Peer::Chat:
+        // recipient = api()->getChannel(arguments.peer.groupId, arguments.peer.accessHash);
+        break;
+    case Telegram::Peer::Channel:
+        //recipient = api()->getChannel(arguments.peer.channelId, arguments.peer.accessHash);
+        break;
+    }
+    return nullptr;
+}
+
 LocalUser *Server::getUser(const QString &identifier) const
 {
     quint32 id = m_phoneToUserId.value(identifier);
@@ -257,6 +277,52 @@ Session *Server::createSession(quint64 authId, const QByteArray &authKey, const 
 Session *Server::getSessionByAuthId(quint64 authKeyId) const
 {
     return m_authIdToSession.value(authKeyId);
+}
+
+void Server::queueUpdates(const QVector<UpdateNotification> &notifications)
+{
+    for (const UpdateNotification &notification : notifications) {
+        LocalUser *recipient = getUser(notification.userId);
+
+        TLUpdates updates;
+        updates.tlType = TLValue::Updates;
+        updates.date = notification.date;
+
+        TLUpdate newMessageUpdate;
+        newMessageUpdate.tlType = TLValue::UpdateNewMessage;
+
+        const TLMessage *message = recipient->getPostBox()->getMessage(notification.messageId);
+        if (!message) {
+            qWarning() << Q_FUNC_INFO << "no message";
+            continue;
+        }
+        newMessageUpdate.message = *message;
+        const bool messageToSelf = message->toId.userId == message->fromId;
+        if (message->fromId == recipient->userId()) {
+            if (!messageToSelf) {
+                newMessageUpdate.message.flags |= TLMessage::Out;
+            }
+        }
+        newMessageUpdate.pts = notification.pts;
+        newMessageUpdate.ptsCount = 1;
+
+        QSet<Peer> interestingPeers;
+        interestingPeers.insert(Telegram::Utils::toPublicPeer(message->toId));
+        if (!messageToSelf && message->fromId) {
+            interestingPeers.insert(Peer::fromUserId(message->fromId));
+        }
+
+        Utils::setupTLPeers(&updates, interestingPeers, this, recipient);
+        updates.seq = 0; // ??
+        updates.updates = { newMessageUpdate };
+
+        for (Session *session : recipient->activeSessions()) {
+            if (session == notification.excludeSession) {
+                continue;
+            }
+            session->rpcLayer()->sendUpdates(updates);
+        }
+    }
 }
 
 void Server::insertUser(LocalUser *user)

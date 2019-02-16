@@ -15,14 +15,29 @@ namespace Telegram {
 
 namespace Server {
 
-quint32 MessageRecipient::addMessage(const TLMessage &message)
+quint32 PostBox::addMessage(const TLMessage &message)
 {
     ++m_lastMessageId;
+    ++m_pts;
 
     m_messages.insert(m_lastMessageId, message);
     TLMessage *addedMessage = &m_messages[m_lastMessageId];
     addedMessage->id = m_lastMessageId;
     return m_lastMessageId;
+}
+
+const TLMessage *PostBox::getMessage(quint32 messageId) const
+{
+    PostBox *mutableBox = const_cast<PostBox *>(this);
+    return mutableBox->getMutableMessage(messageId);
+}
+
+TLMessage *PostBox::getMutableMessage(quint32 messageId)
+{
+    if (m_messages.contains(messageId)) {
+        return &m_messages[messageId];
+    }
+    return nullptr;
 }
 
 TLPeer MessageRecipient::toTLPeer() const
@@ -50,20 +65,6 @@ TLPeer MessageRecipient::toTLPeer() const
     return result;
 }
 
-const TLMessage *MessageRecipient::getMessage(quint32 messageId) const
-{
-    MessageRecipient *mutableUser = const_cast<MessageRecipient *>(this);
-    return mutableUser->getMutableMessage(messageId);
-}
-
-TLMessage *MessageRecipient::getMutableMessage(quint32 messageId)
-{
-    if (m_messages.contains(messageId)) {
-        return &m_messages[messageId];
-    }
-    return nullptr;
-}
-
 UserContact AbstractUser::toContact() const
 {
     UserContact contact;
@@ -82,7 +83,9 @@ LocalUser::LocalUser(QObject *parent) :
 void LocalUser::setPhoneNumber(const QString &phoneNumber)
 {
     m_phoneNumber = phoneNumber;
-    m_id = qHash(m_phoneNumber);
+    if (!m_id) {
+        setUserId(qHash(m_phoneNumber));
+    }
 }
 
 void LocalUser::setFirstName(const QString &firstName)
@@ -163,14 +166,6 @@ void LocalUser::setPassword(const QByteArray &salt, const QByteArray &hash)
     m_passwordHash = hash;
 }
 
-quint32 LocalUser::addMessage(const TLMessage &message)
-{
-    quint32 result = MessageRecipient::addMessage(message);
-    const Telegram::Peer messagePeer = Telegram::Utils::getMessagePeer(message, id());
-    syncDialog(messagePeer, m_lastMessageId);
-    return result;
-}
-
 TLVector<TLMessage> LocalUser::getHistory(const Peer &peer,
                                      quint32 offsetId,
                                      quint32 offsetDate,
@@ -186,35 +181,28 @@ TLVector<TLMessage> LocalUser::getHistory(const Peer &peer,
     }
 
     const int actualLimit = qMin<quint32>(limit, 30);
-    QVector<int> wantedIndices;
-    wantedIndices.reserve(actualLimit);
-
-//    for (int i = m_messages.count() - 1; i >= 0; --i) {
-//        const TLMessage &message = m_messages.at(i);
-//        if (peer.isValid()) {
-//            Telegram::Peer messagePeer = Telegram::Utils::getMessagePeer(message, id());
-//            if (peer != messagePeer) {
-//                continue;
-//            }
-//        }
-
-//        wantedIndices.append(i);
-//        if (wantedIndices.count() == actualLimit) {
-//            break;
-//        }
-//    }
 
     TLVector<TLMessage> result;
-//    result.reserve(wantedIndices.count());
-//    for (int i : wantedIndices) {
-//        result.append(m_messages.at(i));
-//    }
-    return result;
-}
+    result.reserve(actualLimit);
+    for (int messageId = m_box.lastMessageId(); messageId >= 0; --messageId) {
+        const TLMessage *message = m_box.getMessage(messageId);
+        if (!message) {
+            continue;
+        }
+        const Telegram::Peer messageDialogPeer = Telegram::Utils::getMessageDialogPeer(*message, userId());
+        if (peer.isValid()) {
+            if (peer != messageDialogPeer) {
+                continue;
+            }
+        }
+        result.append(*message);
+        // Messages to self are not marked as Out
+        if ((message->fromId == userId()) && (messageDialogPeer != toPeer())) {
+            result.last().flags |= TLMessage::Out;
+        }
+    }
 
-quint32 LocalUser::addPts()
-{
-    return ++m_pts;
+    return result;
 }
 
 void LocalUser::importContact(const UserContact &contact)
@@ -245,9 +233,10 @@ void LocalUser::syncDialog(const Peer &peer, quint32 messageId)
     dialog->topMessage = messageId;
 }
 
-TLValue LocalUser::newMessageUpdateType() const
+void LocalUser::setUserId(quint32 userId)
 {
-    return TLValue::UpdateNewMessage;
+    m_id = userId;
+    m_box.setUserId(m_id);
 }
 
 } // Server namespace

@@ -97,6 +97,18 @@ Telegram::Peer getMessagePeer(const TLMessage &message, quint32 selfId)
     }
 }
 
+Peer getMessageDialogPeer(const TLMessage &message, quint32 applicantUserId)
+{
+    if (message.toId.tlType == TLValue::PeerUser) {
+        if (message.toId.userId == applicantUserId) {
+            if (message.fromId) {
+                return Peer::fromUserId(message.fromId);
+            }
+        }
+    }
+    return toPublicPeer(message.toId);
+}
+
 QString mimeTypeByStorageFileType(TLValue type)
 {
     switch (type) {

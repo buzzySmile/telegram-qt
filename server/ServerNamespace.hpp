@@ -27,8 +27,9 @@ struct ServerSalt
 struct UserDialog
 {
     Telegram::Peer peer;
-    quint32 topMessage = 0;
     QString draftText;
+    quint32 topMessage = 0;
+    quint32 unreadCount = 0;
 };
 
 struct UserContact

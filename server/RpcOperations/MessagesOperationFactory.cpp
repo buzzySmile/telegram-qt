@@ -965,14 +965,15 @@ void MessagesRpcOperation::runGetDialogs()
 
     for (const UserDialog *d : dialogs) {
         TLDialog dialog;
+        const PostBox *box = self->getPostBox();
         dialog.peer = Telegram::Utils::toTLPeer(d->peer);
         dialog.topMessage = d->topMessage;
         dialog.draft.message = d->draftText;
         dialog.draft.tlType = d->draftText.isEmpty() ? TLValue::DraftMessageEmpty : TLValue::DraftMessage;
-        dialog.unreadCount = 1;
+        dialog.unreadCount = d->unreadCount;
         result.dialogs.append(dialog);
 
-        const TLMessage *m = self->getMessage(d->topMessage);
+        const TLMessage *m = box->getMessage(d->topMessage);
         if (m) {
             result.messages.resize(result.messages.size() + 1);
             result.messages.last() = *m;
@@ -1536,91 +1537,101 @@ void MessagesRpcOperation::runSendMessage()
     TLFunctions::TLMessagesSendMessage &arguments = m_sendMessage;
 
     LocalUser *self = layer()->getUser();
-
     Telegram::Peer targetPeer = Telegram::Utils::toPublicPeer(arguments.peer, self->id());
-    MessageRecipient *senderOutbox = nullptr;
-    MessageRecipient *receiverInbox = nullptr;
+    const bool messageToSelf = self->toPeer() == targetPeer;
+    MessageRecipient *receiverInbox = api()->getRecipient(targetPeer, self);
 
-    switch (targetPeer.type) {
-    case Telegram::Peer::User:
-        receiverInbox = api()->tryAccessUser(targetPeer.id, arguments.peer.accessHash, self);
-//        if (targetPeer == self->toPeer()) {
-//            targetOutbox;
-//        }
-        break;
-    case Telegram::Peer::Chat:
-        break;
-    case Telegram::Peer::Channel:
-        //recipient = api()->getChannel(arguments.peer.channelId, arguments.peer.accessHash);
-        break;
-    }
     if (!receiverInbox) {
         sendRpcError(RpcError());
         return;
     }
 
+    // Result and broadcasted Updates date seems to be always older than the message date,
+    // so prepare the update right from the start.
     TLUpdates result;
     result.tlType = TLValue::Updates;
     result.date = Telegram::Utils::getCurrentTime();
 
-    // Add to receiver inbox
-    // Add to sender outbox
+    TLMessage message;
+    message.tlType = TLValue::Message;
+    //if (!receiverInbox->isBroadcast()) {
+        message.fromId = self->id();
+        message.flags |= TLMessage::FromId;
+    //}
+    message.message = arguments.message;
+    message.date = Telegram::Utils::getCurrentTime();
+    message.toId = receiverInbox->toTLPeer();
+
+    QVector<PostBox *> boxes = receiverInbox->postBoxes();
+    if ((targetPeer.type == Peer::User) && !messageToSelf) {
+        boxes.append(self->postBoxes());
+    }
+    // Boxes:
+    // to contact
+    //    Users (self and recipient (if not self))
+    //
+    // to group chat
+    //    Users (each member)
+    //
+    // to megagroup or broadcast
+    //    Channel (the channel)
+
+    QVector<UpdateNotification> notifications;
+    UpdateNotification *selfNotification = nullptr;
+
+    for (PostBox *box : boxes) {
+        const quint32 newMessageId = box->addMessage(message);
+        UpdateNotification notification;
+        notification.date = result.date;
+        notification.messageId = newMessageId;
+        notification.pts = box->pts();
+        for (const quint32 userId : box->users()) {
+            notification.userId = userId;
+            if (targetPeer.type == Peer::User) {
+                if (userId == self->id()) {
+                    notification.dialogPeer = targetPeer;
+                } else {
+                    notification.dialogPeer = self->toPeer();
+                }
+            } else {
+                notification.dialogPeer = targetPeer;
+            }
+            notifications.append(notification);
+            if (userId == self->id()) {
+                selfNotification = &notifications.last();
+            }
+            LocalUser *user = api()->getUser(userId);
+            user->syncDialog(notification.dialogPeer, newMessageId);
+        }
+    }
+
+    selfNotification->excludeSession = layer()->session();
+    selfNotification->dialogPeer = targetPeer;
 
     TLUpdate newMessageUpdate;
-    newMessageUpdate.tlType = receiverInbox->newMessageUpdateType();
-    //newMessageUpdate.message = *addedMessage;
-    //newMessageUpdate.pts = receiverInbox->pts();
+    newMessageUpdate.tlType = TLValue::UpdateNewMessage;
+    // TODO: Optimize by making the 'message' var be a ref to 'newMessageUpdate.message'?
+    newMessageUpdate.message = message;
+    newMessageUpdate.message.id = selfNotification->messageId;
+    if (!messageToSelf) {
+        newMessageUpdate.message.flags |= TLMessage::Out;
+    }
+    newMessageUpdate.pts = selfNotification->pts;
     newMessageUpdate.ptsCount = 1;
-
-//    for (Session *s : activeSessions()) {
-//        if (s == excludeSession) {
-//            continue;
-//        }
-//        s->rpcLayer()->sendUpdates(updates);
-//    }
-
-//    TLMessage &message = newMessageUpdate.message;
-//    message.tlType = TLValue::Message;
-//    message.fromId = self->id();
-//    message.flags |= TLMessage::FromId;
-//    message.message = arguments.message;
-//    message.date = Telegram::Utils::getCurrentTime();
-//    message.toId = targetInbox->toTLPeer();
-//    const quint32 newMessageId = self->addMessage(message);
-
-//    message.id = newMessageId;
 
     TLUpdate updateMessageId;
     updateMessageId.tlType = TLValue::UpdateMessageID;
-//    updateMessageId.quint32Id = newMessageId;
+    updateMessageId.quint32Id = selfNotification->messageId;
     updateMessageId.randomId = arguments.randomId;
 
+    QSet<Peer> interestingPeers;
+    interestingPeers.insert(targetPeer);
+    if (!messageToSelf && message.fromId) {
+        interestingPeers.insert(Peer::fromUserId(message.fromId));
+    }
 
-//    QSet<Peer> interestingPeers;
-//    interestingPeers.insert(targetPeer);
-//    Utils::setupTLPeers(&result, interestingPeers, api(), self);
-
-//    result.date = message.date;
-
-//    if (targetInbox != self) {
-//        recipient->addMessage(message, layer()->session());
-//    }
-
-
-
-//    // Post update to other sessions
-//    bool needUpdates = false;
-//    for (Session *s : activeSessions()) {
-//        if (s == excludeSession) {
-//            continue;
-//        }
-//        needUpdates = true;
-//        break;
-//    }
-
-//    if (needUpdates) {
     // Bake updates
-
+    Utils::setupTLPeers(&result, interestingPeers, api(), self);
     result.seq = 0; // Sender seq number seems to always equal zero
     result.updates = {
         updateMessageId,
@@ -1629,12 +1640,7 @@ void MessagesRpcOperation::runSendMessage()
     };
     sendRpcReply(result);
 
-    if (true) {
-
-
-
-        // receiverInbox->queueUpdates();
-    }
+    api()->queueUpdates(notifications);
 }
 
 void MessagesRpcOperation::runSendScreenshotNotification()

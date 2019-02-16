@@ -58,7 +58,7 @@ bool setupTLUser(TLUser *output, const AbstractUser *input, const LocalUser *app
 
 bool setupTLUpdatesState(TLUpdatesState *output, const LocalUser *forUser)
 {
-    output->pts = forUser->pts();
+    output->pts = forUser->getPostBox()->pts();
     output->date = Telegram::Utils::getCurrentTime();
     output->seq = 1; // FIXME
     output->qts = 0;
