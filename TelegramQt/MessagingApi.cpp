@@ -75,25 +75,34 @@ void MessagingApiPrivate::onMessageSendResult(quint64 randomMessageId, MessagesR
     rpcOperation->getResult(&result);
 
     bool hasMessageId = false;
-    for (const TLUpdate &u : result.updates) {
-        if (u.tlType == TLValue::UpdateMessageID) {
-            hasMessageId = true;
-            if (u.randomId == randomMessageId) {
-                const DataInternalApi::SentMessage sentMessage = dataApi->dequeueMessage(randomMessageId, u.quint32Id);
-                if (sentMessage.randomId == randomMessageId) {
-                    emit q->messageSent(sentMessage.peer, randomMessageId, u.quint32Id);
+    if (result.tlType == TLValue::UpdateShortSentMessage) {
+        hasMessageId = true;
+        const DataInternalApi::SentMessage sentMessage = dataApi->dequeueMessage(randomMessageId, result.id);
+        if (sentMessage.randomId == randomMessageId) {
+            emit q->messageSent(sentMessage.peer, randomMessageId, result.id);
+        }
+    } else {
+        for (const TLUpdate &u : result.updates) {
+            if (u.tlType == TLValue::UpdateMessageID) {
+                hasMessageId = true;
+                if (u.randomId == randomMessageId) {
+                    const DataInternalApi::SentMessage sentMessage = dataApi->dequeueMessage(randomMessageId, u.quint32Id);
+                    if (sentMessage.randomId == randomMessageId) {
+                        emit q->messageSent(sentMessage.peer, randomMessageId, u.quint32Id);
+                    } else {
+                        qDebug() << "Sent message ID not found in the local queue" << randomMessageId;
+                    }
                 } else {
-                    qDebug() << "Sent message ID not found in the local queue" << randomMessageId;
+                    qWarning() << Q_FUNC_INFO
+                               << "Unexpected random message id."
+                               << "Actual:" << u.randomId << "Expected:" << randomMessageId;
                 }
             } else {
-                qWarning() << Q_FUNC_INFO
-                           << "Unexpected random message id."
-                           << "Actual:" << u.randomId << "Expected:" << randomMessageId;
+                backend()->updatesApi()->processUpdate(u);
             }
-        } else {
-            backend()->updatesApi()->processUpdate(u);
         }
     }
+
     if (!hasMessageId) {
         qWarning() << Q_FUNC_INFO << "Expected message id update is missing";
     }
