@@ -20,18 +20,21 @@ class AbstractUser;
 class PostBox
 {
 public:
+    Peer peer() const { return m_peer; }
     quint32 pts() const { return m_pts; }
     quint32 lastMessageId() const { return m_lastMessageId; }
     virtual QVector<quint32> users() const = 0;
 
-    quint32 addMessage(const TLMessage &message);
-    const TLMessage *getMessage(quint32 messageId) const;
-protected:
-    TLMessage *getMutableMessage(quint32 messageId);
+    quint32 addMessage(MessageData *message);
+    quint64 getMessageGlobalId(quint32 messageId) const;
 
+    QHash<quint32,quint64> getAllMessageKeys() const;
+
+protected:
+    Peer m_peer;
     quint32 m_pts = 0;
     quint32 m_lastMessageId = 0;
-    QHash<quint32,TLMessage> m_messages;
+    QHash<quint32,quint64> m_messages;
 };
 
 class UserPostBox : public PostBox
@@ -41,16 +44,13 @@ public:
 
     QVector<quint32> users() const override
     {
-        return { m_userId };
+        return { m_peer.id };
     }
 
     void setUserId(quint32 userId)
     {
-        m_userId = userId;
+        m_peer = Peer::fromUserId(userId);
     }
-
-protected:
-    quint32 m_userId = 0;
 };
 
 //class ChannelPostBox : public PostBox
@@ -125,15 +125,14 @@ public:
 
     QVector<PostBox *> postBoxes() override { return { &m_box }; }
 
-    TLVector<TLMessage> getHistory(const Telegram::Peer &peer, quint32 offsetId, quint32 offsetDate, quint32 addOffset, quint32 limit, quint32 maxId, quint32 minId, quint32 hash) const;
-
     void importContact(const UserContact &contact);
     QVector<quint32> contactList() const override { return m_contactList; }
     const QVector<UserDialog *> dialogs() const { return m_dialogs; }
 
     QVector<UserContact> importedContacts() const { return m_importedContacts; }
 
-    void syncDialog(const Telegram::Peer &peer, quint32 messageId);
+    void syncDialogTopMessage(const Telegram::Peer &peer, quint32 messageId);
+    void syncDialogReadMessage(const Telegram::Peer &peer, quint32 messageId);
 
 signals:
     void sessionAdded(Session *newSession);

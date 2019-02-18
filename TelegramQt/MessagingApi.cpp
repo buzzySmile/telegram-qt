@@ -50,6 +50,22 @@ quint64 MessagingApiPrivate::sendMessage(const Peer peer, const QString &message
     return randomId;
 }
 
+void MessagingApiPrivate::setMessageRead(const Peer peer, quint32 messageId)
+{
+    DataInternalApi *dataApi = DataInternalApi::get(dataStorage());
+    dataApi->enqueueMessageRead(peer, messageId);
+
+    if (peer.type == Peer::Channel) {
+        const TLInputChannel inputChannel = dataApi->toInputChannel(peer.id);
+        channelsLayer()->readHistory(inputChannel, messageId);
+        // TODO: Emit messageReadOutbox on operation success
+    } else {
+        const TLInputPeer inputPeer = dataApi->toInputPeer(peer);
+        messagesLayer()->readHistory(inputPeer, messageId);
+        // TODO: Emit messageReadOutbox on operation success
+    }
+}
+
 void MessagingApiPrivate::onMessageSendResult(quint64 randomMessageId, MessagesRpcLayer::PendingUpdates *rpcOperation)
 {
     DataInternalApi *dataApi = DataInternalApi::get(dataStorage());
@@ -188,9 +204,10 @@ void MessagingApi::setMessageAction(const Peer peer, TelegramNamespace::MessageA
 
 }
 
-void MessagingApi::setMessageRead(const Peer peer, quint32 messageId)
+void MessagingApi::readHistory(const Peer peer, quint32 messageId)
 {
-
+    Q_D(MessagingApi);
+    return d->setMessageRead(peer, messageId);
 }
 
 DataStorage *MessagingApiPrivate::dataStorage()

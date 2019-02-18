@@ -339,6 +339,16 @@ DataInternalApi::SentMessage DataInternalApi::dequeueMessage(quint64 messageRand
     return SentMessage();
 }
 
+/*!
+  \fn void DataInternalApi::enqueueMessageRead(const Peer peer, quint32 messageId)
+
+  Save in local storage that the dialog with \a peer is read up to \a messageId
+*/
+void DataInternalApi::enqueueMessageRead(const Peer peer, quint32 messageId)
+{
+
+}
+
 TLInputPeer DataInternalApi::toInputPeer(const Peer &peer) const
 {
     TLInputPeer inputPeer;
@@ -393,9 +403,24 @@ TLInputUser DataInternalApi::toInputUser(quint32 userId) const
             qWarning() << Q_FUNC_INFO << "Unknown user type: " << QString::number(user->tlType, 16);
         }
     } else {
-        qWarning() << Q_FUNC_INFO << "Unknown user.";
+        qWarning() << Q_FUNC_INFO << "Unknown user" << userId;
     }
     return inputUser;
+}
+
+TLInputChannel DataInternalApi::toInputChannel(quint32 channelId) const
+{
+    TLInputChannel inputChannel;
+    const TLChat *channel = m_chats.value(channelId);
+    if (channel) {
+        inputChannel.tlType = TLValue::InputChannel;
+        inputChannel.channelId = channelId;
+        inputChannel.accessHash = channel->accessHash;
+    } else {
+        qWarning() << Q_FUNC_INFO << "Unknown channel" << channelId;
+        inputChannel.tlType = TLValue::InputChannelEmpty;
+    }
+    return inputChannel;
 }
 
 quint64 DataInternalApi::channelMessageToKey(quint32 channelId, quint32 messageId)

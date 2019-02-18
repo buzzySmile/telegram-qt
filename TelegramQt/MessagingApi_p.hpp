@@ -44,6 +44,7 @@ public:
     static MessagingApiPrivate *get(MessagingApi *parent);
 
     quint64 sendMessage(const Telegram::Peer peer, const QString &message, const MessagingApi::SendOptions &options);
+    void setMessageRead(const Telegram::Peer peer, quint32 messageId);
 
     void onMessageSendResult(quint64 randomMessageId, MessagesRpcLayer::PendingUpdates *rpcOperation);
 

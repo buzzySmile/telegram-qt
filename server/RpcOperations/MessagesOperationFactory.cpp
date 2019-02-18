@@ -25,6 +25,7 @@
 #include "ServerApi.hpp"
 #include "ServerRpcLayer.hpp"
 #include "ServerUtils.hpp"
+#include "Storage.hpp"
 #include "TelegramServerUser.hpp"
 
 #include "Debug_p.hpp"
@@ -970,13 +971,18 @@ void MessagesRpcOperation::runGetDialogs()
         dialog.topMessage = d->topMessage;
         dialog.draft.message = d->draftText;
         dialog.draft.tlType = d->draftText.isEmpty() ? TLValue::DraftMessageEmpty : TLValue::DraftMessage;
+        dialog.readInboxMaxId = d->readInboxMaxId;
+        dialog.readOutboxMaxId = d->readOutboxMaxId;
         dialog.unreadCount = d->unreadCount;
+        dialog.unreadMentionsCount = d->unreadMentionsCount;
         result.dialogs.append(dialog);
 
-        const TLMessage *m = box->getMessage(d->topMessage);
-        if (m) {
+        quint64 topMessageGlobalId = box->getMessageGlobalId(dialog.topMessage);
+        const MessageData *messageData = api()->storage()->getMessage(topMessageGlobalId);
+
+        if (messageData) {
             result.messages.resize(result.messages.size() + 1);
-            result.messages.last() = *m;
+            Utils::setupTLMessage(&result.messages.last(), messageData, dialog.topMessage, self);
         }
     }
 
@@ -1050,28 +1056,63 @@ void MessagesRpcOperation::runGetHistory()
     case TLValue::InputPeerChat:
     case TLValue::InputPeerChannel:
     default:
-        qCritical() << Q_FUNC_INFO << "Not implemented for requested arguments" << arguments.peer.tlType;
+        qCritical() << Q_FUNC_INFO << "Not implemented for requested peer" << arguments.peer.tlType;
         processNotImplementedMethod(TLValue::MessagesGetHistory);
         sendRpcError(RpcError());
         return;
     }
 
     const LocalUser *self = layer()->getUser();
-    const Peer p = api()->getPeer(arguments.peer, self);
-    TLVector<TLMessage> history = self->getHistory(
-                p,
-                arguments.offsetId,
-                arguments.offsetDate,
-                arguments.addOffset,
-                arguments.limit,
-                arguments.maxId,
-                arguments.minId,
-                arguments.hash);
+    const Peer peer = api()->getPeer(arguments.peer, self);
+    const QHash<quint32,quint64> messageKeys = self->getPostBox()->getAllMessageKeys();
+
+    if (arguments.offsetId || arguments.offsetDate || arguments.addOffset || arguments.minId || arguments.maxId || arguments.hash) {
+        qCritical() << Q_FUNC_INFO << "Not implemented for requested arguments" << arguments.peer.tlType;
+        processNotImplementedMethod(TLValue::MessagesGetHistory);
+        sendRpcError(RpcError());
+        return;
+    }
+
+    constexpr int c_serverHistorySliceLimit = 30;
+    const int serverLimit = qMin<int>(c_serverHistorySliceLimit, messageKeys.count());
+    const int actualLimit = qMin<int>(static_cast<int>(arguments.limit), serverLimit);
+
     TLMessagesMessages result;
-    result.messages.swap(history);
+    result.messages.reserve(actualLimit);
+
+    for (quint32 messageId = self->getPostBox()->lastMessageId(); messageId != 0; --messageId) {
+        const quint64 globalMessageId = messageKeys.value(messageId);
+        if (!globalMessageId) {
+            // It's OK to have no message e.g. for deleted entires
+            continue;
+        }
+
+        const MessageData *messageData = api()->storage()->getMessage(globalMessageId);
+
+        if (!messageData) {
+            // It's OK to have no message e.g. for deleted entires
+            continue;
+        }
+
+        TLMessage message;
+        Utils::setupTLMessage(&message, messageData, messageId, self);
+
+        // Possible optimization: filter out by message dialog before setupTLMessage()
+        const Telegram::Peer messageDialogPeer = Telegram::Utils::getMessageDialogPeer(message, self->userId());
+        if (peer.isValid()) {
+            if (peer != messageDialogPeer) {
+                continue;
+            }
+        }
+
+        result.messages.append(message);
+        if (result.messages.count() >= actualLimit) {
+            break;
+        }
+    }
 
     QSet<Peer> interestingPeers;
-    interestingPeers.insert(p);
+    interestingPeers.insert(peer);
     Utils::getInterestingPeers(&interestingPeers, result.messages);
     Utils::setupTLPeers(&result, interestingPeers, api(), self);
     sendRpcReply(result);
@@ -1301,10 +1342,33 @@ void MessagesRpcOperation::runReadFeaturedStickers()
 
 void MessagesRpcOperation::runReadHistory()
 {
-    // TLFunctions::TLMessagesReadHistory &arguments = m_readHistory;
-    if (processNotImplementedMethod(TLValue::MessagesReadHistory)) {
+    TLFunctions::TLMessagesReadHistory &arguments = m_readHistory;
+
+    LocalUser *self = layer()->getUser();
+    Telegram::Peer targetPeer = Telegram::Utils::toPublicPeer(arguments.peer, self->id());
+    MessageRecipient *receiverInbox = api()->getRecipient(targetPeer, self);
+
+    if (!receiverInbox) {
+        sendRpcError(RpcError(RpcError::PeerIdInvalid));
         return;
     }
+
+    // 1. Update self dialog read message
+    self->syncDialogReadMessage(targetPeer, arguments.maxId);
+    // 2. Notify the sender about the read
+    //     if (toId is contact)
+    //         update the contact outgoing box
+    //     else if (toId is group)
+    //         mark the message in group as read for the message sender
+    //     else
+    //         error
+    //
+
+//    QVector<PostBox *> boxes = receiverInbox->postBoxes();
+//    if ((targetPeer.type == Peer::User) && (targetPeer.id != self->id())) {
+//        boxes.append(self->postBoxes());
+//    }
+
     TLMessagesAffectedMessages result;
     sendRpcReply(result);
 }
@@ -1542,25 +1606,13 @@ void MessagesRpcOperation::runSendMessage()
     MessageRecipient *receiverInbox = api()->getRecipient(targetPeer, self);
 
     if (!receiverInbox) {
-        sendRpcError(RpcError());
+        sendRpcError(RpcError(RpcError::PeerIdInvalid));
         return;
     }
+    const quint32 requestDate = Telegram::Utils::getCurrentTime();
 
     // Result and broadcasted Updates date seems to be always older than the message date,
-    // so prepare the update right from the start.
-    TLUpdates result;
-    result.tlType = TLValue::Updates;
-    result.date = Telegram::Utils::getCurrentTime();
-
-    TLMessage message;
-    message.tlType = TLValue::Message;
-    //if (!receiverInbox->isBroadcast()) {
-        message.fromId = self->id();
-        message.flags |= TLMessage::FromId;
-    //}
-    message.message = arguments.message;
-    message.date = Telegram::Utils::getCurrentTime();
-    message.toId = receiverInbox->toTLPeer();
+    // so prepare the request date right on the start.
 
     QVector<PostBox *> boxes = receiverInbox->postBoxes();
     if ((targetPeer.type == Peer::User) && !messageToSelf) {
@@ -1579,10 +1631,12 @@ void MessagesRpcOperation::runSendMessage()
     QVector<UpdateNotification> notifications;
     UpdateNotification *selfNotification = nullptr;
 
+    MessageData *messageData = api()->storage()->addMessage(self->id(), targetPeer, arguments.message);
+
     for (PostBox *box : boxes) {
-        const quint32 newMessageId = box->addMessage(message);
+        const quint32 newMessageId = box->addMessage(messageData);
         UpdateNotification notification;
-        notification.date = result.date;
+        notification.date = requestDate;
         notification.messageId = newMessageId;
         notification.pts = box->pts();
         for (const quint32 userId : box->users()) {
@@ -1601,36 +1655,36 @@ void MessagesRpcOperation::runSendMessage()
                 selfNotification = &notifications.last();
             }
             LocalUser *user = api()->getUser(userId);
-            user->syncDialog(notification.dialogPeer, newMessageId);
+            user->syncDialogTopMessage(notification.dialogPeer, newMessageId);
         }
     }
 
     selfNotification->excludeSession = layer()->session();
     selfNotification->dialogPeer = targetPeer;
 
-    TLUpdate newMessageUpdate;
-    newMessageUpdate.tlType = TLValue::UpdateNewMessage;
-    // TODO: Optimize by making the 'message' var be a ref to 'newMessageUpdate.message'?
-    newMessageUpdate.message = message;
-    newMessageUpdate.message.id = selfNotification->messageId;
-    if (!messageToSelf) {
-        newMessageUpdate.message.flags |= TLMessage::Out;
-    }
-    newMessageUpdate.pts = selfNotification->pts;
-    newMessageUpdate.ptsCount = 1;
-
     TLUpdate updateMessageId;
     updateMessageId.tlType = TLValue::UpdateMessageID;
     updateMessageId.quint32Id = selfNotification->messageId;
     updateMessageId.randomId = arguments.randomId;
 
+    TLUpdate newMessageUpdate;
+    newMessageUpdate.tlType = TLValue::UpdateNewMessage;
+    newMessageUpdate.pts = selfNotification->pts;
+    newMessageUpdate.ptsCount = 1;
+
+    Utils::setupTLMessage(&newMessageUpdate.message, messageData, selfNotification->messageId, self);
+
     QSet<Peer> interestingPeers;
     interestingPeers.insert(targetPeer);
-    if (!messageToSelf && message.fromId) {
-        interestingPeers.insert(Peer::fromUserId(message.fromId));
+    if (!messageToSelf && newMessageUpdate.message.fromId) {
+        interestingPeers.insert(Peer::fromUserId(newMessageUpdate.message.fromId));
     }
 
     // Bake updates
+    TLUpdates result;
+    result.tlType = TLValue::Updates;
+    result.date = requestDate;
+
     Utils::setupTLPeers(&result, interestingPeers, api(), self);
     result.seq = 0; // Sender seq number seems to always equal zero
     result.updates = {

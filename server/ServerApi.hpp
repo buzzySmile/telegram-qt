@@ -30,6 +30,7 @@ class LocalUser;
 class RemoteClientConnection;
 class AbstractUser;
 class MessageRecipient;
+class Storage;
 
 struct PhoneStatus
 {
@@ -84,6 +85,8 @@ public:
     virtual Session *createSession(quint64 authId, const QByteArray &authKey, const QString &address) = 0;
     virtual Session *getSessionByAuthId(quint64 authId) const = 0;
     virtual LocalUser *addUser(const QString &identifier) = 0;
+
+    virtual Storage *storage() const = 0;
 
     virtual void queueUpdates(const QVector<UpdateNotification> &updates) = 0;
 };

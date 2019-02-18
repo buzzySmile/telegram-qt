@@ -80,6 +80,8 @@ public:
     Session *createSession(quint64 authId, const QByteArray &authKey, const QString &address) override;
     Session *getSessionByAuthId(quint64 authKeyId) const override;
 
+    Storage *storage() const override;
+
     void queueUpdates(const QVector<UpdateNotification> &notifications) override;
 
     void insertUser(LocalUser *user);

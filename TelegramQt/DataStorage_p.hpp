@@ -76,11 +76,13 @@ public:
     SentMessage getQueuedMessage(quint64 randomMessageId) const;
     SentMessage dequeueMessage(quint64 messageRandomId, quint32 messageId);
     QVector<quint64> getPostedMessages() const;
+    void enqueueMessageRead(const Peer peer, quint32 messageId);
 
     quint32 selfUserId() const { return m_selfUserId; }
 
     TLInputPeer toInputPeer(const Telegram::Peer &peer) const;
     TLInputUser toInputUser(quint32 userId) const;
+    TLInputChannel toInputChannel(quint32 channelId) const;
 
     static quint64 channelMessageToKey(quint32 channelId, quint32 messageId);
 

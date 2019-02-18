@@ -32,6 +32,7 @@
 
 #include "ServerRpcLayer.hpp"
 #include "ServerUtils.hpp"
+#include "Storage.hpp"
 #include "Debug.hpp"
 
 Q_LOGGING_CATEGORY(loggingCategoryServer, "telegram.server.main", QtInfoMsg)
@@ -279,6 +280,12 @@ Session *Server::getSessionByAuthId(quint64 authKeyId) const
     return m_authIdToSession.value(authKeyId);
 }
 
+Storage *Server::storage() const
+{
+    static Storage st;
+    return &st;
+}
+
 void Server::queueUpdates(const QVector<UpdateNotification> &notifications)
 {
     for (const UpdateNotification &notification : notifications) {
@@ -291,25 +298,21 @@ void Server::queueUpdates(const QVector<UpdateNotification> &notifications)
         TLUpdate newMessageUpdate;
         newMessageUpdate.tlType = TLValue::UpdateNewMessage;
 
-        const TLMessage *message = recipient->getPostBox()->getMessage(notification.messageId);
-        if (!message) {
+        const quint64 globalMessageId = recipient->getPostBox()->getMessageGlobalId(notification.messageId);
+        const MessageData *messageData = storage()->getMessage(globalMessageId);
+
+        if (!messageData) {
             qWarning() << Q_FUNC_INFO << "no message";
             continue;
         }
-        newMessageUpdate.message = *message;
-        const bool messageToSelf = message->toId.userId == message->fromId;
-        if (message->fromId == recipient->userId()) {
-            if (!messageToSelf) {
-                newMessageUpdate.message.flags |= TLMessage::Out;
-            }
-        }
+        Utils::setupTLMessage(&newMessageUpdate.message, messageData, notification.messageId, recipient);
         newMessageUpdate.pts = notification.pts;
         newMessageUpdate.ptsCount = 1;
 
         QSet<Peer> interestingPeers;
-        interestingPeers.insert(Telegram::Utils::toPublicPeer(message->toId));
-        if (!messageToSelf && message->fromId) {
-            interestingPeers.insert(Peer::fromUserId(message->fromId));
+        interestingPeers.insert(messageData->toPeer());
+        if (newMessageUpdate.message.fromId) {
+            interestingPeers.insert(Peer::fromUserId(newMessageUpdate.message.fromId));
         }
 
         Utils::setupTLPeers(&updates, interestingPeers, this, recipient);

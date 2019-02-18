@@ -87,6 +87,32 @@ bool setupTLPeers(TLVector<TLUser> *users, TLVector<TLChat> *chats,
     return true;
 }
 
+bool setupTLMessage(TLMessage *output, const MessageData *messageData, quint32 messageId,
+                    const LocalUser *forUser)
+{
+    output->tlType = TLValue::Message;
+    output->id = messageId;
+
+    quint32 flags = 0;
+    //if (!receiverInbox->isBroadcast()) {
+        output->fromId = messageData->fromId();
+        flags |= TLMessage::FromId;
+    //}
+    output->message = messageData->text();
+    output->date = messageData->date();
+    output->toId = Telegram::Utils::toTLPeer(messageData->toPeer());
+
+    const bool messageToSelf = messageData->toPeer() == forUser->toPeer();
+    if (messageData->fromId() == forUser->userId()) {
+        if (!messageToSelf) {
+            flags |= TLMessage::Out;
+        }
+    }
+    output->flags = flags;
+
+    return true;
+}
+
 } // Utils namespace
 
 } // Server namespace

@@ -3,6 +3,7 @@
 
 #include "TelegramNamespace.hpp"
 
+#include <QHash>
 #include <QString>
 
 namespace Telegram {
@@ -29,7 +30,10 @@ struct UserDialog
     Telegram::Peer peer;
     QString draftText;
     quint32 topMessage = 0;
+    quint32 readInboxMaxId = 0;
+    quint32 readOutboxMaxId = 0;
     quint32 unreadCount = 0;
+    quint32 unreadMentionsCount = 0;
 };
 
 struct UserContact
@@ -38,6 +42,36 @@ struct UserContact
     QString phone;
     QString firstName;
     QString lastName;
+};
+
+class MessageData
+{
+public:
+    MessageData() = default;
+    MessageData(quint32 from, Peer to, const QString &text);
+
+    quint64 globalId() const { return m_globalId; }
+    QString text() const { return m_text; }
+    Peer toPeer() const { return m_to; }
+    quint32 fromId() const { return m_fromId; }
+    quint32 date() const { return m_date; }
+
+    void addReference(const Telegram::Peer &peer, quint32 messageId);
+    void setGlobalId(quint64 id);
+
+protected:
+    QHash<Peer, quint32> m_references;
+    QString m_text;
+    Peer m_to;
+    quint64 m_globalId = 0;
+    quint32 m_fromId = 0;
+    quint32 m_date = 0;
+};
+
+struct MessageKeys
+{
+    QVector<quint64> globalIds;
+    QVector<quint32> boxIds;
 };
 
 } // Server namespace
