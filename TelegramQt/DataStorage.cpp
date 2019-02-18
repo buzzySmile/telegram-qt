@@ -212,6 +212,27 @@ const TLMessage *DataInternalApi::getMessage(const Peer &peer, quint32 messageId
     return m_clientMessages.value(messageId);
 }
 
+void DataInternalApi::processNewMessage(const TLMessage &message, quint32 pts)
+{
+    processData(message);
+
+    const Peer dialogPeer = Utils::getMessageDialogPeer(message, selfUserId());
+    int dialogIndex = getDialogIndex(dialogPeer);
+    if (dialogIndex < 0) {
+        dialogIndex = m_dialogs.count();
+        m_dialogs.append(TLDialog());
+        m_dialogs.last().peer = Utils::toTLPeer(dialogPeer);
+    }
+    TLDialog *dialog = &m_dialogs[dialogIndex];
+    if (dialog->topMessage < message.id) {
+        dialog->topMessage = message.id;
+    }
+    if (dialog->pts < pts) {
+        dialog->pts = pts;
+    }
+    ++dialog->unreadCount;
+}
+
 void DataInternalApi::processData(const TLMessage &message)
 {
     TLMessage *m = nullptr;
@@ -349,6 +370,11 @@ void DataInternalApi::enqueueMessageRead(const Peer peer, quint32 messageId)
 
 }
 
+void DataInternalApi::dequeueMessageRead(const Peer peer, quint32 messageId)
+{
+
+}
+
 TLInputPeer DataInternalApi::toInputPeer(const Peer &peer) const
 {
     TLInputPeer inputPeer;
@@ -427,6 +453,16 @@ quint64 DataInternalApi::channelMessageToKey(quint32 channelId, quint32 messageI
 {
     quint64 key = channelId;
     return (key << 32) + messageId;
+}
+
+int Telegram::Client::DataInternalApi::getDialogIndex(const Telegram::Peer &peer) const
+{
+    for (int i = 0; i < m_dialogs.count(); ++i) {
+        if (Utils::toPublicPeer(m_dialogs.at(i).peer) == peer) {
+            return i;
+        }
+    }
+    return -1;
 }
 
 DataStoragePrivate *DataStoragePrivate::get(DataStorage *parent)

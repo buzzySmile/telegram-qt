@@ -204,7 +204,7 @@ bool UpdatesInternalApi::processUpdate(const TLUpdate &update)
 //                break;
 //            }
 //        }
-        dataInternalApi()->processData(update.message);
+        dataInternalApi()->processNewMessage(update.message, update.pts);
 
         MessagingApiPrivate *messaging = MessagingApiPrivate::get(messagingApi());
         messaging->onMessageReceived(update.message);

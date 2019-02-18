@@ -171,14 +171,13 @@ void LocalUser::importContact(const UserContact &contact)
 
 UserDialog *LocalUser::ensureDialog(const Telegram::Peer &peer)
 {
-    for (int i = 0; i < m_dialogs.count(); ++i) {
-        if (m_dialogs.at(i)->peer == peer) {
-            return m_dialogs[i];
-        }
+    UserDialog *dialog = getDialog(peer);
+    if (!dialog) {
+        dialog = new UserDialog();
+        dialog->peer = peer;
+        m_dialogs.append(dialog);
     }
-    m_dialogs.append(new UserDialog());
-    m_dialogs.last()->peer = peer;
-    return m_dialogs.last();
+    return dialog;
 }
 
 void LocalUser::syncDialogTopMessage(const Peer &peer, quint32 messageId)
@@ -195,6 +194,16 @@ void LocalUser::syncDialogReadMessage(const Peer &peer, quint32 messageId)
     if (peer.type == Peer::Channel) {
         qWarning() << Q_FUNC_INFO << "Channel not implemented yet";
     }
+}
+
+UserDialog *LocalUser::getDialog(const Peer &peer)
+{
+    for (int i = 0; i < m_dialogs.count(); ++i) {
+        if (m_dialogs.at(i)->peer == peer) {
+            return m_dialogs.at(i);
+        }
+    }
+    return nullptr;
 }
 
 void LocalUser::setUserId(quint32 userId)

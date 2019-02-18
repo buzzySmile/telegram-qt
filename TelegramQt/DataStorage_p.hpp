@@ -61,6 +61,7 @@ public:
     const TLUser *getSelfUser() const;
     const TLMessage *getMessage(const Telegram::Peer &peer, quint32 messageId) const;
 
+    void processNewMessage(const TLMessage &message, quint32 pts);
     void processData(const TLMessage &message);
     void processData(const TLVector<TLChat> &chats);
     void processData(const TLChat &chat);
@@ -77,6 +78,7 @@ public:
     SentMessage dequeueMessage(quint64 messageRandomId, quint32 messageId);
     QVector<quint64> getPostedMessages() const;
     void enqueueMessageRead(const Peer peer, quint32 messageId);
+    void dequeueMessageRead(const Peer peer, quint32 messageId);
 
     quint32 selfUserId() const { return m_selfUserId; }
 
@@ -90,6 +92,7 @@ public:
     const QHash<quint32, TLUser *> &users() const { return m_users; }
     const QHash<quint32, TLChat *> &chats() const { return m_chats; }
     const TLVector<TLDialog> &dialogs() const { return m_dialogs; }
+    int getDialogIndex(const Peer &peer) const;
 
 protected:
     QHash<quint32, TLUser *> m_users;

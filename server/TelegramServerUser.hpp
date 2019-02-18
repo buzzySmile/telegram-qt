@@ -21,6 +21,8 @@ class PostBox
 {
 public:
     Peer peer() const { return m_peer; }
+
+    quint32 bumpPts() { return ++m_pts; }
     quint32 pts() const { return m_pts; }
     quint32 lastMessageId() const { return m_lastMessageId; }
     virtual QVector<quint32> users() const = 0;
@@ -121,6 +123,7 @@ public:
 
     QString passwordHint() const { return QString(); }
 
+    PostBox *getPostBox() { return &m_box; }
     const PostBox *getPostBox() const { return &m_box; }
 
     QVector<PostBox *> postBoxes() override { return { &m_box }; }
@@ -133,6 +136,7 @@ public:
 
     void syncDialogTopMessage(const Telegram::Peer &peer, quint32 messageId);
     void syncDialogReadMessage(const Telegram::Peer &peer, quint32 messageId);
+    UserDialog *getDialog(const Telegram::Peer &peer);
 
 signals:
     void sessionAdded(Session *newSession);

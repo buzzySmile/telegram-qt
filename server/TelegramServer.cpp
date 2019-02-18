@@ -290,35 +290,61 @@ void Server::queueUpdates(const QVector<UpdateNotification> &notifications)
 {
     for (const UpdateNotification &notification : notifications) {
         LocalUser *recipient = getUser(notification.userId);
+        if (!recipient) {
+            qWarning() << Q_FUNC_INFO << "Invalid user!" << notification.userId;
+        }
 
         TLUpdates updates;
         updates.tlType = TLValue::Updates;
         updates.date = notification.date;
 
-        TLUpdate newMessageUpdate;
-        newMessageUpdate.tlType = TLValue::UpdateNewMessage;
-
-        const quint64 globalMessageId = recipient->getPostBox()->getMessageGlobalId(notification.messageId);
-        const MessageData *messageData = storage()->getMessage(globalMessageId);
-
-        if (!messageData) {
-            qWarning() << Q_FUNC_INFO << "no message";
-            continue;
-        }
-        Utils::setupTLMessage(&newMessageUpdate.message, messageData, notification.messageId, recipient);
-        newMessageUpdate.pts = notification.pts;
-        newMessageUpdate.ptsCount = 1;
-
         QSet<Peer> interestingPeers;
-        interestingPeers.insert(messageData->toPeer());
-        if (newMessageUpdate.message.fromId) {
-            interestingPeers.insert(Peer::fromUserId(newMessageUpdate.message.fromId));
+        switch (notification.type) {
+        case UpdateNotification::Type::NewMessage: {
+            TLUpdate update;
+            update.tlType = TLValue::UpdateNewMessage;
+
+            const quint64 globalMessageId = recipient->getPostBox()->getMessageGlobalId(notification.messageId);
+            const MessageData *messageData = storage()->getMessage(globalMessageId);
+
+            if (!messageData) {
+                qWarning() << Q_FUNC_INFO << "no message";
+                continue;
+            }
+            Utils::setupTLMessage(&update.message, messageData, notification.messageId, recipient);
+            update.pts = notification.pts;
+            update.ptsCount = 1;
+
+            interestingPeers.insert(messageData->toPeer());
+            if (update.message.fromId) {
+                interestingPeers.insert(Peer::fromUserId(update.message.fromId));
+            }
+
+            updates.seq = 0; // ??
+            updates.updates = { update };
+        }
+            break;
+        case UpdateNotification::Type::ReadInbox:
+        case UpdateNotification::Type::ReadOutbox:
+        {
+            TLUpdate update;
+            update.tlType = notification.type == UpdateNotification::Type::ReadInbox
+                      ? TLValue::UpdateReadHistoryInbox
+                      : TLValue::UpdateReadHistoryOutbox;
+            update.pts = notification.pts;
+            update.ptsCount = 1;
+            update.peer = Telegram::Utils::toTLPeer(notification.dialogPeer);
+            update.maxId = notification.messageId;
+
+            updates.seq = 0; // ??
+            updates.updates = { update };
+        }
+            break;
+        case UpdateNotification::Type::Invalid:
+            break;
         }
 
         Utils::setupTLPeers(&updates, interestingPeers, this, recipient);
-        updates.seq = 0; // ??
-        updates.updates = { newMessageUpdate };
-
         for (Session *session : recipient->activeSessions()) {
             if (session == notification.excludeSession) {
                 continue;

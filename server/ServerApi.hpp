@@ -51,12 +51,20 @@ struct PasswordInfo
 
 struct UpdateNotification
 {
+    enum class Type {
+        Invalid,
+        NewMessage,
+        ReadInbox,
+        ReadOutbox,
+    };
+
     Peer dialogPeer;
     quint32 userId = 0;
     quint32 messageId = 0;
     quint32 pts = 0;
     quint32 date = 0;
     Session *excludeSession = nullptr;
+    Type type = Type::Invalid;
 };
 
 class ServerApi

@@ -30,6 +30,7 @@ namespace Telegram {
 
 namespace Client {
 
+class Client;
 class DeclarativeClient;
 class MessagesOperation;
 
@@ -254,6 +255,8 @@ public slots:
     void fetchPrevious();
     void fetchNext();
 
+    void readAllMessages();
+
 Q_SIGNALS:
     void clientChanged();
 
@@ -270,6 +273,7 @@ protected:
     static Column intToColumn(int value);
     static Role indexToRole(const QModelIndex &index, int role = Qt::DisplayRole);
     QString roleToName(Role role) const;
+    Client *client() const;
 
     DeclarativeClient *m_qmlClient = nullptr;
     QVector<Event*> m_events;

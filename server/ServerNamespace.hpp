@@ -34,6 +34,7 @@ struct UserDialog
     quint32 readOutboxMaxId = 0;
     quint32 unreadCount = 0;
     quint32 unreadMentionsCount = 0;
+    quint32 pts = 0;
 };
 
 struct UserContact
@@ -56,7 +57,8 @@ public:
     quint32 fromId() const { return m_fromId; }
     quint32 date() const { return m_date; }
 
-    void addReference(const Telegram::Peer &peer, quint32 messageId);
+    void addReference(const Peer &peer, quint32 messageId);
+    quint32 getReference(const Peer &peer) const { return m_references.value(peer); }
     void setGlobalId(quint64 id);
 
 protected:

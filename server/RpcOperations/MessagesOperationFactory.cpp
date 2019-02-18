@@ -1112,7 +1112,9 @@ void MessagesRpcOperation::runGetHistory()
     }
 
     QSet<Peer> interestingPeers;
-    interestingPeers.insert(peer);
+    if (peer.isValid()) {
+        interestingPeers.insert(peer);
+    }
     Utils::getInterestingPeers(&interestingPeers, result.messages);
     Utils::setupTLPeers(&result, interestingPeers, api(), self);
     sendRpcReply(result);
@@ -1346,31 +1348,70 @@ void MessagesRpcOperation::runReadHistory()
 
     LocalUser *self = layer()->getUser();
     Telegram::Peer targetPeer = Telegram::Utils::toPublicPeer(arguments.peer, self->id());
-    MessageRecipient *receiverInbox = api()->getRecipient(targetPeer, self);
+    if (targetPeer.type == Peer::Channel) {
+        // There is channels.readHistory for that
+        sendRpcError(RpcError(RpcError::PeerIdInvalid));
+        return;
+    }
 
+    UserDialog *dialog = self->getDialog(targetPeer);
+    if (!dialog) {
+        sendRpcError(RpcError(RpcError::PeerIdInvalid));
+        return;
+    }
+
+    MessageRecipient *receiverInbox = api()->getRecipient(targetPeer, self);
     if (!receiverInbox) {
         sendRpcError(RpcError(RpcError::PeerIdInvalid));
         return;
     }
 
-    // 1. Update self dialog read message
-    self->syncDialogReadMessage(targetPeer, arguments.maxId);
-    // 2. Notify the sender about the read
-    //     if (toId is contact)
-    //         update the contact outgoing box
-    //     else if (toId is group)
-    //         mark the message in group as read for the message sender
-    //     else
-    //         error
-    //
+    QVector<quint32> affectedMessages;
+    quint32 maxId = qMax(dialog->topMessage, arguments.maxId);
+    for (quint32 messageId = maxId; messageId > dialog->readInboxMaxId; --messageId) {
+        affectedMessages.append(messageId);
+    }
 
-//    QVector<PostBox *> boxes = receiverInbox->postBoxes();
-//    if ((targetPeer.type == Peer::User) && (targetPeer.id != self->id())) {
-//        boxes.append(self->postBoxes());
-//    }
+    dialog->readInboxMaxId = maxId;
+
+    const quint64 globalMessageId = self->getPostBox()->getMessageGlobalId(maxId);
+    const MessageData *messageData = api()->storage()->getMessage(globalMessageId);
+
+    LocalUser *messageSender = api()->getUser(messageData->fromId());
+    UserDialog *senderDialog = messageSender->getDialog(messageData->toPeer());
+    quint32 senderMessageId = messageData->getReference(messageSender->toPeer());
+
+    if (senderDialog->readOutboxMaxId < senderMessageId) {
+        // Message sender update needed
+        senderDialog->readOutboxMaxId = senderMessageId;
+        messageSender->getPostBox()->bumpPts();
+    }
 
     TLMessagesAffectedMessages result;
+    result.pts = self->getPostBox()->bumpPts();
+    result.ptsCount = 1;
     sendRpcReply(result);
+
+    if (self->activeSessions().count() > 1) {
+        UpdateNotification readNotification;
+        readNotification.userId = self->userId();
+        readNotification.type = UpdateNotification::Type::ReadInbox;
+        readNotification.pts = result.pts;
+        readNotification.messageId = maxId;
+        readNotification.dialogPeer = targetPeer;
+        readNotification.excludeSession = layer()->session();
+        api()->queueUpdates({readNotification});
+    }
+
+    if (messageSender->hasActiveSession()) {
+        UpdateNotification readNotification;
+        readNotification.userId = messageSender->userId();
+        readNotification.type = UpdateNotification::Type::ReadOutbox;
+        readNotification.pts = messageSender->getPostBox()->pts();
+        readNotification.messageId = senderMessageId;
+        readNotification.dialogPeer = messageData->toPeer();
+        api()->queueUpdates({readNotification});
+    }
 }
 
 void MessagesRpcOperation::runReadMentions()
@@ -1636,6 +1677,7 @@ void MessagesRpcOperation::runSendMessage()
     for (PostBox *box : boxes) {
         const quint32 newMessageId = box->addMessage(messageData);
         UpdateNotification notification;
+        notification.type = UpdateNotification::Type::NewMessage;
         notification.date = requestDate;
         notification.messageId = newMessageId;
         notification.pts = box->pts();

@@ -5,6 +5,7 @@
 #include "ClientBackend.hpp"
 #include "DataStorage.hpp"
 #include "DataStorage_p.hpp"
+#include "Debug.hpp"
 #include "DialogList.hpp"
 #include "UpdatesLayer.hpp"
 #include "Utils.hpp"
@@ -57,12 +58,14 @@ void MessagingApiPrivate::setMessageRead(const Peer peer, quint32 messageId)
 
     if (peer.type == Peer::Channel) {
         const TLInputChannel inputChannel = dataApi->toInputChannel(peer.id);
-        channelsLayer()->readHistory(inputChannel, messageId);
-        // TODO: Emit messageReadOutbox on operation success
+        ChannelsRpcLayer::PendingBool *rpcOperation = channelsLayer()->readHistory(inputChannel, messageId);
+        rpcOperation->connectToFinished(this, &MessagingApiPrivate::onReadChannelHistoryFinished,
+                                        peer, messageId, rpcOperation);
     } else {
         const TLInputPeer inputPeer = dataApi->toInputPeer(peer);
-        messagesLayer()->readHistory(inputPeer, messageId);
-        // TODO: Emit messageReadOutbox on operation success
+        MessagesRpcLayer::PendingMessagesAffectedMessages *rpcOperation = messagesLayer()->readHistory(inputPeer, messageId);
+        rpcOperation->connectToFinished(this, &MessagingApiPrivate::onReadHistoryFinished,
+                                        peer, messageId, rpcOperation);
     }
 }
 
@@ -121,7 +124,7 @@ void MessagingApiPrivate::onMessageReceived(const TLMessage &message)
 PendingOperation *MessagingApiPrivate::getDialogs()
 {
     PendingOperation *operation = new PendingOperation("MessagingApi::getDialogs", this);
-    MessagesRpcLayer::PendingMessagesDialogs *rpcOperation = messagesLayer()->getDialogs(0, 0, 0, TLInputPeer(), 2);
+    MessagesRpcLayer::PendingMessagesDialogs *rpcOperation = messagesLayer()->getDialogs(0, 0, 0, TLInputPeer(), 5);
     rpcOperation->connectToFinished(this, &MessagingApiPrivate::onGetDialogsFinished, operation, rpcOperation);
     return operation;
 }
@@ -256,6 +259,40 @@ void MessagingApiPrivate::onGetHistoryFinished(MessagesOperation *operation, Mes
         priv->m_messages.append(m.id);
     }
     operation->setFinished();
+}
+
+void MessagingApiPrivate::onReadHistoryFinished(const Peer peer, quint32 messageId, MessagesRpcLayer::PendingMessagesAffectedMessages *rpcOperation)
+{
+    if (!rpcOperation->isSucceeded()) {
+        qWarning() << Q_FUNC_INFO << this << peer << messageId << "failed" << rpcOperation->errorDetails();
+        return;
+    }
+
+    TLMessagesAffectedMessages result;
+    rpcOperation->getResult(&result);
+    onHistoryReadSucceeded(peer, messageId);
+}
+
+void MessagingApiPrivate::onReadChannelHistoryFinished(const Peer peer, quint32 messageId, ChannelsRpcLayer::PendingBool *rpcOperation)
+{
+    if (!rpcOperation->isSucceeded()) {
+        qWarning() << Q_FUNC_INFO << this << peer << messageId << "failed" << rpcOperation->errorDetails();
+        return;
+    }
+
+    TLBool result;
+    rpcOperation->getResult(&result);
+    onHistoryReadSucceeded(peer, messageId);
+}
+
+void MessagingApiPrivate::onHistoryReadSucceeded(const Peer peer, quint32 messageId)
+{
+    Q_Q(MessagingApi);
+    DataInternalApi *dataApi = DataInternalApi::get(dataStorage());
+    dataApi->dequeueMessageRead(peer, messageId);
+
+    emit q->messageReadInbox(peer, messageId);
+    // TODO: Emit messageReadOutbox on operation success
 }
 
 MessagingApi::SendOptions::SendOptions() :
