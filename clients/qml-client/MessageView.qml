@@ -91,4 +91,20 @@ Frame {
             }
         }
     }
+
+    onPeerChanged: {
+        readTimer.start()
+    }
+
+    Timer {
+        id: readTimer
+        interval: 500
+        onTriggered: {
+            messagesModel.readAllMessages()
+
+            if (peer.isValid()) {
+                console.log("Model peer is valid!")
+            }
+        }
+    }
 }
