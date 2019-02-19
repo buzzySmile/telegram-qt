@@ -69,6 +69,7 @@ public:
     AbstractUser *getRemoteUser(const QString &identifier) const;
 
     Telegram::Peer getPeer(const TLInputPeer &peer, const LocalUser *applicant) const override;
+    MessageRecipient *getRecipient(const Peer &peer, const LocalUser *applicant) const override;
 
     LocalUser *getUser(const QString &identifier) const override;
     LocalUser *getUser(quint32 userId) const override;
@@ -79,6 +80,10 @@ public:
     Session *createSession(quint64 authId, const QByteArray &authKey, const QString &address) override;
     Session *getSessionByAuthId(quint64 authKeyId) const override;
     void bindUserSession(LocalUser *user, Session *session) override;
+
+    Storage *storage() const override;
+
+    void queueUpdates(const QVector<UpdateNotification> &notifications) override;
 
     void insertUser(LocalUser *user);
 

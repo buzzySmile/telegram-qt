@@ -30,6 +30,11 @@
 #include "UsersOperationFactory.hpp"
 // End of generated RPC Operation Factory includes
 
+#include "ServerRpcLayer.hpp"
+#include "ServerUtils.hpp"
+#include "Storage.hpp"
+#include "Debug.hpp"
+
 Q_LOGGING_CATEGORY(loggingCategoryServer, "telegram.server.main", QtInfoMsg)
 Q_LOGGING_CATEGORY(loggingCategoryServerApi, "telegram.server.api", QtWarningMsg)
 
@@ -76,7 +81,8 @@ void Server::setServerPrivateRsaKey(const Telegram::RsaKey &key)
 bool Server::start()
 {
     if (!m_serverSocket->listen(QHostAddress(m_dcOption.address), m_dcOption.port)) {
-        qCWarning(loggingCategoryServer) << "Unable to listen port" << m_dcOption.port;
+        qCCritical(loggingCategoryServer).noquote().nospace() << "Unable to listen port " << m_dcOption.port
+                                                              << " ("  << m_serverSocket->serverError() << ")";
         return false;
     }
     qCInfo(loggingCategoryServer).nospace().noquote() << this << " start server (DC " << m_dcOption.id << ") "
@@ -198,6 +204,22 @@ Peer Server::getPeer(const TLInputPeer &peer, const LocalUser *applicant) const
     };
 }
 
+MessageRecipient *Server::getRecipient(const Peer &peer, const LocalUser *applicant) const
+{
+    Q_UNUSED(applicant)
+    switch (peer.type) {
+    case Telegram::Peer::User:
+        return getUser(peer.id);
+    case Telegram::Peer::Chat:
+        // recipient = api()->getChannel(arguments.peer.groupId, arguments.peer.accessHash);
+        break;
+    case Telegram::Peer::Channel:
+        //recipient = api()->getChannel(arguments.peer.channelId, arguments.peer.accessHash);
+        break;
+    }
+    return nullptr;
+}
+
 LocalUser *Server::getUser(const QString &identifier) const
 {
     quint32 id = m_phoneToUserId.value(identifier);
@@ -261,6 +283,80 @@ Session *Server::getSessionByAuthId(quint64 authKeyId) const
 void Server::bindUserSession(LocalUser *user, Session *session)
 {
     user->addSession(session);
+}
+
+Storage *Server::storage() const
+{
+    static Storage st;
+    return &st;
+}
+
+void Server::queueUpdates(const QVector<UpdateNotification> &notifications)
+{
+    for (const UpdateNotification &notification : notifications) {
+        LocalUser *recipient = getUser(notification.userId);
+        if (!recipient) {
+            qWarning() << Q_FUNC_INFO << "Invalid user!" << notification.userId;
+        }
+
+        TLUpdates updates;
+        updates.tlType = TLValue::Updates;
+        updates.date = notification.date;
+
+        QSet<Peer> interestingPeers;
+        switch (notification.type) {
+        case UpdateNotification::Type::NewMessage: {
+            TLUpdate update;
+            update.tlType = TLValue::UpdateNewMessage;
+
+            const quint64 globalMessageId = recipient->getPostBox()->getMessageGlobalId(notification.messageId);
+            const MessageData *messageData = storage()->getMessage(globalMessageId);
+
+            if (!messageData) {
+                qWarning() << Q_FUNC_INFO << "no message";
+                continue;
+            }
+            Utils::setupTLMessage(&update.message, messageData, notification.messageId, recipient);
+            update.pts = notification.pts;
+            update.ptsCount = 1;
+
+            interestingPeers.insert(messageData->toPeer());
+            if (update.message.fromId) {
+                interestingPeers.insert(Peer::fromUserId(update.message.fromId));
+            }
+
+            updates.seq = 0; // ??
+            updates.updates = { update };
+        }
+            break;
+        case UpdateNotification::Type::ReadInbox:
+        case UpdateNotification::Type::ReadOutbox:
+        {
+            TLUpdate update;
+            update.tlType = notification.type == UpdateNotification::Type::ReadInbox
+                      ? TLValue::UpdateReadHistoryInbox
+                      : TLValue::UpdateReadHistoryOutbox;
+            update.pts = notification.pts;
+            update.ptsCount = 1;
+            update.peer = Telegram::Utils::toTLPeer(notification.dialogPeer);
+            update.maxId = notification.messageId;
+
+            updates.seq = 0; // ??
+            updates.updates = { update };
+        }
+            break;
+        case UpdateNotification::Type::Invalid:
+            break;
+        }
+
+        Utils::setupTLPeers(&updates, interestingPeers, this, recipient);
+        for (Session *session : recipient->activeSessions()) {
+            if (session == notification.excludeSession) {
+                continue;
+            }
+            session->rpcLayer()->sendUpdates(updates);
+        }
+    }
 }
 
 void Server::insertUser(LocalUser *user)

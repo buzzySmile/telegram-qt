@@ -1,5 +1,6 @@
 #include "UpdatesLayer.hpp"
 
+#include "ApiUtils.hpp"
 #include "ClientBackend.hpp"
 #include "DataStorage.hpp"
 #include "DataStorage_p.hpp"
@@ -14,7 +15,7 @@
 
 #include <QLoggingCategory>
 
-Q_LOGGING_CATEGORY(c_updatesLoggingCategory, "telegram.client.updates", QtWarningMsg)
+Q_LOGGING_CATEGORY(c_updatesLoggingCategory, "telegram.client.updates", QtDebugMsg)
 
 namespace Telegram {
 
@@ -153,9 +154,7 @@ bool UpdatesInternalApi::processUpdates(const TLUpdates &updates)
 
 bool UpdatesInternalApi::processUpdate(const TLUpdate &update)
 {
-#ifdef DEVELOPER_BUILD
-    qCDebug(c_updatesLoggingCategory) << Q_FUNC_INFO << update;
-#endif
+    DataInternalApi *dataInternals = dataInternalApi();
     MessagingApiPrivate *messaging = MessagingApiPrivate::get(messagingApi());
 
     switch (update.tlType) {
@@ -164,13 +163,24 @@ bool UpdatesInternalApi::processUpdate(const TLUpdate &update)
         return true;
     case TLValue::UpdateNewMessage:
     case TLValue::UpdateNewChannelMessage:
-    {
-        dataInternalApi()->processData(update.message);
-
-        MessagingApiPrivate *messaging = MessagingApiPrivate::get(messagingApi());
+        dataInternalApi()->processNewMessage(update.message, update.pts);
         messaging->onMessageReceived(update.message);
+        return true;
+    case TLValue::UpdateReadMessagesContents:
+    case TLValue::UpdateReadHistoryInbox:
+    {
+        Peer peer = Utils::toPublicPeer(update.peer);
+        messaging->onMessageInboxRead(peer, update.maxId);
+        dataInternals->updateInboxRead(peer, update.maxId);
     }
-        break;
+        return true;
+    case TLValue::UpdateReadHistoryOutbox:
+    {
+        Peer peer = Utils::toPublicPeer(update.peer);
+        messaging->onMessageOutboxRead(peer, update.maxId);
+        dataInternals->updateOutboxRead(peer, update.maxId);
+    }
+        return true;
     default:
         break;
     }
